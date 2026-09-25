@@ -18,7 +18,7 @@ vault.
 | Library | MediaStore-backed scanning on Android, folder view, configurable scan directories, thumbnails |
 | Streaming | HLS / HTTP streams, saved stream list, YouTube links with quality selection, links shared from other apps |
 | Tools | Picture-in-picture, background playback, video cutter (FFmpeg) |
-| Private vault | AES-256-GCM encrypted videos and metadata, streamed to the player without decrypted copies on disk; decoy vault, recovery questions and brute-force lockout (see [SECURITY.md](SECURITY.md)) |
+| Private vault | AES-256-GCM encrypted videos and metadata, streamed to the player without decrypted copies on disk; auto-lock, screenshot blocking, decoy vault, recovery questions and brute-force lockout (see [SECURITY.md](SECURITY.md)) |
 
 ## Getting started
 

@@ -109,6 +109,16 @@ class SystemControlsService {
     }
   }
 
+  /// Marks the window secure (no screenshots, recordings or recent-apps
+  /// preview) on Android. No-op elsewhere.
+  static Future<void> setSecure(bool secure) async {
+    try {
+      await _channel.invokeMethod('setSecure', {'secure': secure});
+    } catch (e) {
+      debugPrint('Error setting secure window: $e');
+    }
+  }
+
   static Future<bool> requestAudioFocus() async {
     try {
       return await _channel.invokeMethod('requestAudioFocus') ?? false;

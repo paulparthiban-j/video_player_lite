@@ -7,6 +7,7 @@ import 'core/app/error_reporting.dart';
 import 'core/theme/app_theme.dart';
 import 'core/ui/responsive.dart';
 import 'services/theme_service.dart';
+import 'services/vault_auto_lock.dart';
 import 'services/vault_service.dart';
 import 'screens/parthi_play_main_screen.dart';
 import 'screens/launch_screen.dart';
@@ -47,6 +48,7 @@ class ParthiPlayApp extends ConsumerStatefulWidget {
 
 class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
     with WidgetsBindingObserver {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   DateTime? _lastVaultCleanupAt;
   static const Duration _vaultCleanupCooldown = Duration(minutes: 30);
 
@@ -54,6 +56,7 @@ class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    VaultAutoLock.navigatorKey = _navigatorKey;
   }
 
   @override
@@ -64,6 +67,7 @@ class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    unawaited(VaultAutoLock.handleLifecycle(state));
     if (state == AppLifecycleState.resumed) {
       final now = DateTime.now();
       if (_lastVaultCleanupAt == null ||
@@ -79,6 +83,7 @@ class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Parthi Play',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -11,7 +12,6 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val SYSTEM_CHANNEL = "next_player/system_controls"
-    private val CASTING_CHANNEL = "next_player/casting"
     private val ORIENTATION_CHANNEL = "parthi_play/orientation"
     private val audioFocusChangeListener =
         AudioManager.OnAudioFocusChangeListener { }
@@ -81,50 +81,19 @@ class MainActivity : FlutterActivity() {
                 "requestAudioFocus" -> result.success(requestAudioFocus())
                 "abandonAudioFocus" -> result.success(abandonAudioFocus())
                 "isSupported" -> result.success(true)
-                else -> result.notImplemented()
-            }
-        }
-
-        // Casting Channel (Mock implementation for now)
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            CASTING_CHANNEL
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "initialize" -> result.success(true)
-                "isSupported" -> result.success(true)
-                "scanForDevices" -> {
-                    val mockDevices = listOf(
-                        mapOf(
-                            "id" to "mock_tv_1",
-                            "name" to "Living Room TV",
-                            "type" to "Chromecast",
-                            "host" to "192.168.1.100",
-                            "port" to 8008,
-                            "isConnected" to false
-                        ),
-                        mapOf(
-                            "id" to "mock_tv_2",
-                            "name" to "Bedroom TV",
-                            "type" to "DLNA",
-                            "host" to "192.168.1.101",
-                            "port" to 1400,
-                            "isConnected" to false
-                        )
-                    )
-                    result.success(mockDevices)
+                "setSecure" -> {
+                    // Blocks screenshots, screen recording and the recent-apps
+                    // preview while vault content is on screen.
+                    val secure = call.argument<Boolean>("secure") ?: false
+                    runOnUiThread {
+                        if (secure) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                    }
+                    result.success(true)
                 }
-                "connectToDevice" -> result.success(true)
-                "disconnectFromDevice" -> result.success(true)
-                "loadMedia" -> result.success(true)
-                "play" -> result.success(true)
-                "pause" -> result.success(true)
-                "stop" -> result.success(true)
-                "seek" -> result.success(true)
-                "setVolume" -> result.success(true)
-                "setMuted" -> result.success(true)
-                "getSessionStatus" -> result.success(null)
-                "isDeviceConnected" -> result.success(false)
                 else -> result.notImplemented()
             }
         }

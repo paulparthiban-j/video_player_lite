@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import '../core/ui/responsive.dart';
+import '../services/vault_auto_lock.dart';
 import '../services/vault_service.dart';
 import '../widgets/parthi_play_video_player.dart';
 
@@ -58,15 +59,55 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
           CurvedAnimation(parent: _listController, curve: Curves.easeOutCubic),
         );
 
+    VaultAutoLock.vaultScreenOpened();
     VaultService.cleanupPlaybackTempFiles();
     _loadVaultVideos();
   }
 
   @override
   void dispose() {
+    // Leaving the vault locks it and lifts the screenshot block.
+    VaultAutoLock.vaultScreenClosed();
     _fabController.dispose();
     _listController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showAutoLockDialog() async {
+    final current = await VaultAutoLock.getTimeout();
+    if (!mounted) return;
+    final selected = await showDialog<Duration>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Lock vault when app is in background'),
+        children: [
+          for (final option in VaultAutoLock.options)
+            ListTile(
+              title: Text(VaultAutoLock.describe(option)),
+              trailing: option == current
+                  ? Icon(
+                      Icons.check,
+                      color: Theme.of(dialogContext).colorScheme.primary,
+                    )
+                  : null,
+              onTap: () => Navigator.of(dialogContext).pop(option),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+            child: Text(
+              'The vault also locks whenever you leave this screen.',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    await VaultAutoLock.setTimeout(selected);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Auto-lock: ${VaultAutoLock.describe(selected)}')),
+    );
   }
 
   Future<void> _loadVaultVideos() async {
@@ -268,11 +309,11 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
       if (mounted && exportedPaths.isNotEmpty) {
         // Share the exported files
-        await Share.shareXFiles(
-          exportedPaths.map((path) => XFile(path)).toList(),
-          subject: 'Shared Videos from Parthi Play',
-          text:
-              'Check out these ${exportedPaths.length} video(s) from my private vault!',
+        // No caption: the share must not reveal that a vault exists.
+        await VaultAutoLock.runWhileSuspended(
+          () => Share.shareXFiles(
+            exportedPaths.map((path) => XFile(path)).toList(),
+          ),
         );
 
         if (mounted) {
@@ -419,6 +460,9 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
             icon: Icon(Icons.more_vert, color: onSurfaceVariant),
             onSelected: (value) async {
               switch (value) {
+                case 'auto_lock':
+                  await _showAutoLockDialog();
+                  break;
                 case 'logout':
                   final navigator = Navigator.of(context);
                   await VaultService.logout();
@@ -457,6 +501,16 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'auto_lock',
+                child: Row(
+                  children: [
+                    Icon(Icons.timer_outlined, color: Colors.grey),
+                    SizedBox(width: 8),
+                    Text('Auto-lock'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(
                 value: 'logout',
                 child: Row(
@@ -979,9 +1033,11 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       unawaited(HapticFeedback.mediumImpact());
 
       // Pick video file
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: false,
+      final result = await VaultAutoLock.runWhileSuspended(
+        () => FilePicker.platform.pickFiles(
+          type: FileType.video,
+          allowMultiple: false,
+        ),
       );
 
       // Check mounted after async call
