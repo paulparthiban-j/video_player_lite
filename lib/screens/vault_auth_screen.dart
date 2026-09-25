@@ -400,44 +400,85 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
     );
   }
 
-  void _showHardResetDialog() {
+  static const String _formatConfirmWord = 'FORMAT';
+
+  Future<void> _showHardResetDialog() async {
     final colorScheme = Theme.of(context).colorScheme;
-    showDialog(
+    final confirmController = TextEditingController();
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: colorScheme.surface,
-        title: Text(
-          'Format Vault?',
-          style: TextStyle(color: colorScheme.onSurface),
-        ),
-        content: Text(
-          'This will PERMANENTLY delete all files inside the private folder and reset your password. This action cannot be undone.',
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CANCEL'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(context);
-
-              navigator.pop();
-              await VaultService.hardResetVault();
-
-              if (mounted) {
-                scaffoldMessenger.showSnackBar(
-                  const SnackBar(content: Text('Vault cleared successfully')),
-                );
-                navigator.pushReplacementNamed('/vault-setup');
-              }
-            },
-            child: const Text('FORMAT', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final canFormat =
+              confirmController.text.trim().toUpperCase() == _formatConfirmWord;
+          return AlertDialog(
+            backgroundColor: colorScheme.surface,
+            title: Text(
+              'Format Vault?',
+              style: TextStyle(color: colorScheme.onSurface),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'This PERMANENTLY deletes every video in the private '
+                    'folder and resets your passwords. It cannot be undone.',
+                    style: TextStyle(color: colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Type $_formatConfirmWord to confirm.',
+                    style: TextStyle(color: colorScheme.onSurface),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: confirmController,
+                    autofocus: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textCapitalization: TextCapitalization.characters,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: _formatConfirmWord,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('CANCEL'),
+              ),
+              TextButton(
+                onPressed: canFormat
+                    ? () => Navigator.pop(dialogContext, true)
+                    : null,
+                child: Text(
+                  'FORMAT',
+                  style: TextStyle(
+                    color: canFormat ? Colors.red : colorScheme.outline,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
+    confirmController.dispose();
+    if (confirmed != true || !mounted) return;
+
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    await VaultService.hardResetVault();
+    if (!mounted) return;
+    scaffoldMessenger.showSnackBar(
+      const SnackBar(content: Text('Vault cleared successfully')),
+    );
+    unawaited(navigator.pushReplacementNamed('/vault-setup'));
   }
 }

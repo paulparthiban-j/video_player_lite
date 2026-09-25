@@ -54,6 +54,9 @@ android {
             // Store native libraries uncompressed and page-aligned so the app
             // loads on devices with 16 KB memory pages (Android 15+).
             useLegacyPackaging = false
+            // Flutter has no 32-bit x86 release engine, so plugin libraries
+            // for it (libmpv, FFmpeg) are dead weight in the universal APK.
+            excludes += "lib/x86/**"
         }
     }
 

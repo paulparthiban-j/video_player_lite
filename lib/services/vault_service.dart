@@ -161,7 +161,11 @@ class VaultService {
 
   // Security Questions Keys
   static const String _securityQuestionsKey = 'security_questions';
+  // Legacy: one hash per answer (each crackable on its own).
   static const String _securityAnswersKey = 'security_answers';
+  // Current: one hash over all answers together.
+  static const String _securityAnswersCombinedKey = 'security_answers_all';
+  static const String _questionCountKey = 'security_question_count';
   static const String _securitySetupKey = 'security_setup_done';
 
   // Brute-force protection
@@ -224,16 +228,19 @@ class VaultService {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      final normalized = answers.map(normalizeAnswer).toList();
-      final hashedAnswers = await Future.wait(normalized.map(_hashSecret));
-      final recoveryWrap = await VaultCrypto.wrapKeyWithSecret(
-        dataKey,
-        _recoverySecret(normalized),
-      );
+      final secret = _recoverySecret(answers.map(normalizeAnswer).toList());
+      // A single hash over all answers: guessing one answer at a time
+      // against separate hashes is no longer possible.
+      final results = await Future.wait([
+        _hashSecret(secret),
+        VaultCrypto.wrapKeyWithSecret(dataKey, secret),
+      ]);
 
       await prefs.setStringList(_securityQuestionsKey, questions);
-      await prefs.setStringList(_securityAnswersKey, hashedAnswers);
-      await prefs.setString(_mainRecoveryDataKeyKey, recoveryWrap);
+      await prefs.setString(_securityAnswersCombinedKey, results[0]);
+      await prefs.setInt(_questionCountKey, questions.length);
+      await prefs.remove(_securityAnswersKey);
+      await prefs.setString(_mainRecoveryDataKeyKey, results[1]);
       await prefs.setBool(_securitySetupKey, true);
 
       debugPrint('Security questions set up successfully');
@@ -262,6 +269,25 @@ class VaultService {
     if (await getLockoutRemaining() > Duration.zero) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      final combined = prefs.getString(_securityAnswersCombinedKey);
+      if (combined != null) {
+        final expectedCount = prefs.getInt(_questionCountKey);
+        final matches =
+            answers.length == expectedCount &&
+            await _verifySecret(
+              _recoverySecret(answers.map(normalizeAnswer).toList()),
+              combined,
+            );
+        if (matches) {
+          await _clearFailedAttempts();
+        } else {
+          await _registerFailedAttempt();
+        }
+        return matches;
+      }
+
+      // Vaults whose questions were set before the combined hash existed.
       final storedHashedAnswers =
           prefs.getStringList(_securityAnswersKey) ?? [];
 
@@ -611,6 +637,8 @@ class VaultService {
         _fakeModeKey,
         _securityQuestionsKey,
         _securityAnswersKey,
+        _securityAnswersCombinedKey,
+        _questionCountKey,
         _securitySetupKey,
         _failedAttemptsKey,
         _lockedUntilKey,

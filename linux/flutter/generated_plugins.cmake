@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  ffmpeg_kit_flutter_new_min
   media_kit_libs_linux
   media_kit_video
   url_launcher_linux

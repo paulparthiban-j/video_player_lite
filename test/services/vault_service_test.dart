@@ -146,6 +146,39 @@ void main() {
       );
     });
 
+    test('answers are stored as one combined hash', () async {
+      await setUpWithQuestions();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('security_answers'), isNull);
+      expect(prefs.getString('security_answers_all'), startsWith(r'pbkdf2$'));
+      // One right answer out of two is not enough.
+      expect(
+        await VaultService.verifySecurityAnswers(['rex', 'wrong']),
+        isFalse,
+      );
+      expect(
+        await VaultService.verifySecurityAnswers(['rex', 'new york']),
+        isTrue,
+      );
+    });
+
+    test('per-answer hashes from older versions still verify', () async {
+      String legacy(String s) => sha256.convert(utf8.encode(s)).toString();
+      SharedPreferences.setMockInitialValues({
+        'security_setup_done': true,
+        'security_questions': ['Pet?', 'City?'],
+        'security_answers': [legacy('rex'), legacy('new york')],
+      });
+      expect(
+        await VaultService.verifySecurityAnswers(['Rex', 'New York']),
+        isTrue,
+      );
+      expect(
+        await VaultService.verifySecurityAnswers(['Rex', 'Paris']),
+        isFalse,
+      );
+    });
+
     test('reset sets the chosen main password and keeps the decoy', () async {
       await setUpWithQuestions();
       expect(

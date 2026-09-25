@@ -29,7 +29,9 @@ dependencies:
   shared_preferences: ^2.5.4
 
   # Media tooling
-  ffmpeg_kit_flutter_new: ^4.1.0
+  # "min" build: stream-copy cutting needs no external codecs (~28 MB
+  # smaller per ABI than full-gpl).
+  ffmpeg_kit_flutter_new_min: ^3.6.2
   video_thumbnail: ^0.5.3
 
   # Networking and streaming

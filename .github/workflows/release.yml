@@ -104,7 +104,9 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          ARGS="--release --build-name=${{ steps.version.outputs.name }} --build-number=${{ steps.version.outputs.code }}"
+          # Dart debug symbols are split out (smaller APKs) and kept as a
+          # workflow artifact for symbolicating crash stack traces.
+          ARGS="--release --split-debug-info=build/symbols --build-name=${{ steps.version.outputs.name }} --build-number=${{ steps.version.outputs.code }}"
           flutter build apk $ARGS
           flutter build apk $ARGS --split-per-abi
           flutter build appbundle $ARGS
@@ -126,6 +128,13 @@ jobs:
           cp build/app/outputs/bundle/release/app-release.aab "$OUT/ParthiPlay-$V.aab"
           (cd "$OUT" && sha256sum * > SHA256SUMS.txt)
           ls -lh "$OUT"
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-${{ steps.version.outputs.name }}
+          path: build/symbols
+          retention-days: 90
 
       - name: Write release notes
         shell: bash
