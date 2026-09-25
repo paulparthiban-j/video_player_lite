@@ -7,7 +7,15 @@ class EqualizerWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final videoState = ref.watch(videoPlayerControllerProvider);
+    // Select only equalizer fields so position updates don't rebuild sliders.
+    final videoState = ref.watch(
+      videoPlayerControllerProvider.select(
+        (s) => (
+          equalizerBands: s.equalizerBands,
+          isEqualizerEnabled: s.isEqualizerEnabled,
+        ),
+      ),
+    );
     final videoController = ref.read(videoPlayerControllerProvider.notifier);
 
     final List<String> freqLabels = [

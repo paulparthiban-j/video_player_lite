@@ -1001,7 +1001,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
   }
 
   void _showSubtitleSelection() {
-    final videoState = ref.watch(videoPlayerControllerProvider);
+    final videoState = ref.read(videoPlayerControllerProvider);
     if (videoState.videoPath == null) return;
     showModalBottomSheet(
       context: context,
@@ -1027,7 +1027,15 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       ),
       builder: (context) => Consumer(
         builder: (context, ref, child) {
-          final currentState = ref.watch(videoPlayerControllerProvider);
+          // Only rebuild the sheet for track changes, not playback ticks.
+          final currentState = ref.watch(
+            videoPlayerControllerProvider.select(
+              (s) => (
+                audioTracks: s.audioTracks,
+                audioTrackIndex: s.audioTrackIndex,
+              ),
+            ),
+          );
           return Container(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1139,7 +1147,11 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       ),
       builder: (context) => Consumer(
         builder: (context, ref, child) {
-          final settings = ref.watch(videoPlayerControllerProvider);
+          final settings = ref.watch(
+            videoPlayerControllerProvider.select(
+              (s) => (useHwDec: s.useHwDec, volumeBoost: s.volumeBoost),
+            ),
+          );
 
           return Container(
             padding: const EdgeInsets.all(16),

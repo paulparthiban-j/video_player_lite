@@ -777,24 +777,30 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
     }
   }
 
+  /// Safety net for platforms where media_kit streams occasionally stall:
+  /// reconciles position, duration and play state from the player snapshot.
   void _startStatePolling(Player player) {
     _statePoller?.cancel();
     _statePoller = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
       final current = player.state;
-      final wasPlaying = state.isPlaying;
-      if (current.position != state.position) {
-        state = state.copyWith(position: current.position);
-      }
-      if (current.duration != state.duration) {
-        state = state.copyWith(duration: current.duration);
-      }
-      if (current.playing != wasPlaying) {
+      final playingChanged = current.playing != state.isPlaying;
+      if (playingChanged) {
         if (current.playing) {
           SystemControlsService.requestAudioFocus();
         } else {
           SystemControlsService.abandonAudioFocus();
         }
-        state = state.copyWith(isPlaying: current.playing);
+      }
+      // One notification per tick rather than one per field.
+      if (playingChanged ||
+          current.position != state.position ||
+          current.duration != state.duration) {
+        state = state.copyWith(
+          position: current.position,
+          duration: current.duration,
+          isPlaying: current.playing,
+        );
       }
     });
   }
