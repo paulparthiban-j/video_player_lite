@@ -194,7 +194,10 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
                 const SizedBox(height: 10),
 
                 Text(
-                  'These questions will help you reset your password if you forget it',
+                  'These questions let you reset your password and still '
+                  'decrypt your videos if you forget it. If you set them up '
+                  'before, please enter them again to protect your '
+                  'encryption key.',
                   style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
                   textAlign: TextAlign.center,
                 ),

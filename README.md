@@ -4,8 +4,8 @@
 
 A Flutter video player for Android and iOS built on
 [media_kit](https://pub.dev/packages/media_kit) (libmpv), with hardware
-decoding, gesture controls, network streaming and a password-protected
-private vault.
+decoding, gesture controls, network streaming and an encrypted private
+vault.
 
 ## Features
 
@@ -18,7 +18,7 @@ private vault.
 | Library | MediaStore-backed scanning on Android, folder view, configurable scan directories, thumbnails |
 | Streaming | HLS / HTTP streams, saved stream list, YouTube links with quality selection, links shared from other apps |
 | Tools | Picture-in-picture, background playback, video cutter (FFmpeg) |
-| Private vault | Password-protected hidden folder with a separate decoy vault, recovery questions and brute-force lockout (see [SECURITY.md](SECURITY.md)) |
+| Private vault | AES-256-GCM encrypted videos and metadata, streamed to the player without decrypted copies on disk; decoy vault, recovery questions and brute-force lockout (see [SECURITY.md](SECURITY.md)) |
 
 ## Getting started
 
@@ -70,7 +70,7 @@ lib/
   main.dart                  App entry: error handling, routes, theme mode
   core/
     app/error_reporting.dart Global error hooks (single place to add crash reporting)
-    security/                Password hashing (PBKDF2-HMAC-SHA256)
+    security/                Password hashing (PBKDF2) and vault encryption (AES-256-GCM)
     theme/app_theme.dart     Light and dark Material themes
     video_player_controller.dart  Riverpod StateNotifier owning the media_kit Player
   screens/                   Full-screen routes (library, settings, vault, cutter, ...)

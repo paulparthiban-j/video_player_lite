@@ -92,8 +92,7 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
 
       // Recovery questions protect the main vault only; the decoy vault must
       // never be able to configure them.
-      final needsSecuritySetup =
-          !VaultService.isInFakeMode && !await VaultService.isSecuritySetup();
+      final needsSecuritySetup = await VaultService.needsRecoverySetup();
       if (!mounted) return;
       unawaited(
         Navigator.of(context).pushReplacementNamed(

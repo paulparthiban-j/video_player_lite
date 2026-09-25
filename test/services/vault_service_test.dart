@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/dart.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:next_gen_video_player/core/security/vault_crypto.dart';
 import 'package:next_gen_video_player/services/vault_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +14,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempRoot;
+
+  setUpAll(() => VaultCrypto.algorithm = DartAesGcm.with256bits());
 
   setUp(() async {
     tempRoot = await Directory.systemTemp.createTemp('vault_test_');
@@ -234,6 +238,164 @@ void main() {
     test('vault contents are unavailable when locked', () async {
       expect(await VaultService.getVaultVideos(), isEmpty);
       expect(await VaultService.hideVideo('/does/not/matter'), isFalse);
+    });
+  });
+
+  group('encryption', () {
+    Future<File> makeVideo(String name, String content) async =>
+        File(p.join(tempRoot.path, name))..writeAsStringSync(content);
+
+    test('hidden files and metadata are encrypted at rest', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await VaultService.authenticate('main-pass');
+      final video = await makeVideo('holiday.mp4', 'secret-video-bytes' * 50);
+
+      expect(await VaultService.hideVideo(video.path), isTrue);
+      final stored = (await VaultService.getVaultVideos()).single;
+      expect(stored.isEncrypted, isTrue);
+
+      final hiddenBytes = await File(
+        stored.hiddenPath,
+      ).readAsString(encoding: const Latin1Codec());
+      expect(hiddenBytes, isNot(contains('secret-video-bytes')));
+      expect(
+        await VaultCrypto.isEncryptedFile(File(stored.hiddenPath)),
+        isTrue,
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('main_vault_videos')!;
+      expect(raw, startsWith('enc1:'));
+      expect(raw, isNot(contains('holiday')));
+      expect(raw, isNot(contains(tempRoot.path)));
+    });
+
+    test('decoy and main vaults are isolated', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await VaultService.authenticate('main-pass');
+      await VaultService.hideVideo((await makeVideo('a.mp4', 'main')).path);
+      await VaultService.logout();
+
+      await VaultService.authenticate('decoy-pass');
+      expect(await VaultService.getVaultVideos(), isEmpty);
+      await VaultService.hideVideo((await makeVideo('b.mp4', 'decoy')).path);
+      expect(await VaultService.getVaultVideos(), hasLength(1));
+      await VaultService.logout();
+
+      await VaultService.authenticate('main-pass');
+      final main = await VaultService.getVaultVideos();
+      expect(main.single.fileName, 'a.mp4');
+    });
+
+    test('password recovery keeps encrypted videos readable', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await VaultService.authenticate('main-pass');
+      await VaultService.setSecurityQuestions(['Pet?'], ['Rex']);
+      final video = await makeVideo('keep.mp4', 'precious');
+      await VaultService.hideVideo(video.path);
+      await VaultService.logout();
+
+      expect(
+        await VaultService.resetPasswordWithSecurity('new-pass', [' REX ']),
+        isTrue,
+      );
+      expect(await VaultService.authenticate('new-pass'), isTrue);
+      final stored = (await VaultService.getVaultVideos()).single;
+      expect(await VaultService.unhideVideo(stored.id), isTrue);
+      expect(await video.readAsString(), 'precious');
+    });
+
+    test('changing passwords keeps both vaults readable', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await VaultService.authenticate('decoy-pass');
+      await VaultService.hideVideo((await makeVideo('d.mp4', 'decoy')).path);
+      await VaultService.logout();
+
+      await VaultService.authenticate('main-pass');
+      expect(
+        await VaultService.changePassword('main-pass', 'main-2', 'decoy-2'),
+        isTrue,
+      );
+      await VaultService.logout();
+
+      await VaultService.authenticate('decoy-2');
+      expect(VaultService.isInFakeMode, isTrue);
+      final decoyVideo = (await VaultService.getVaultVideos()).single;
+      expect(await VaultService.verifyVaultIntegrity(), isTrue);
+      expect(decoyVideo.fileName, 'd.mp4');
+    });
+
+    test('streams encrypted videos for playback', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await VaultService.authenticate('main-pass');
+      await VaultService.hideVideo(
+        (await makeVideo('s.mp4', 'streamed-content')).path,
+      );
+      final playback = await VaultService.openForPlayback(
+        (await VaultService.getVaultVideos()).single,
+      );
+      expect(playback.url, isNotNull);
+
+      // The test binding stubs HttpClient; talk to the real loopback server.
+      final previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = previousOverrides);
+      final client = HttpClient();
+      final res = await (await client.getUrl(playback.url!)).close();
+      expect(
+        await res.transform(const Utf8Decoder()).join(),
+        'streamed-content',
+      );
+      client.close(force: true);
+
+      await playback.release();
+      await VaultService.logout();
+    });
+
+    test('vaults from older versions are migrated', () async {
+      // Pre-encryption state: legacy hash, plain JSON list, plain file.
+      String legacy(String s) => sha256.convert(utf8.encode(s)).toString();
+      final vaultDir = Directory(p.join(tempRoot.path, 'main_vault'))
+        ..createSync(recursive: true);
+      final plainFile = File(p.join(vaultDir.path, 'old.vault'))
+        ..writeAsStringSync('legacy-video');
+      SharedPreferences.setMockInitialValues({
+        'vault_is_setup': true,
+        'main_vault_password': legacy('old-main'),
+        'fake_vault_password': legacy('old-fake'),
+        'security_setup_done': true,
+      });
+      await VaultService.writeLegacyVideoList([
+        VaultVideo(
+          id: 'old',
+          originalPath: p.join(tempRoot.path, 'old.mp4'),
+          hiddenPath: plainFile.path,
+          fileName: 'old.mp4',
+          originalExtension: 'mp4',
+          fileSize: 12,
+          hiddenDate: DateTime(2024),
+          format: VaultFileFormat.plain,
+        ),
+      ]);
+
+      expect(await VaultService.authenticate('old-main'), isTrue);
+      // No recovery key yet: the owner is asked to re-save their questions.
+      expect(await VaultService.needsRecoverySetup(), isTrue);
+
+      final before = await VaultService.getVaultVideos();
+      expect(before.single.isEncrypted, isFalse);
+      expect(await VaultService.countUnencryptedVideos(), 1);
+
+      expect(await VaultService.encryptPendingVideos(), 1);
+      final after = (await VaultService.getVaultVideos()).single;
+      expect(after.isEncrypted, isTrue);
+      expect(await plainFile.exists(), isFalse);
+
+      expect(await VaultService.unhideVideo(after.id), isTrue);
+      expect(
+        await File(p.join(tempRoot.path, 'old.mp4')).readAsString(),
+        'legacy-video',
+      );
     });
   });
 }

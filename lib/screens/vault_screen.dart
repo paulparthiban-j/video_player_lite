@@ -20,6 +20,12 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
   List<VaultVideo> _vaultVideos = [];
   bool _isLoading = true;
   bool _isSelectionMode = false;
+
+  // Background encryption of videos hidden by older versions.
+  bool _isEncrypting = false;
+  int _encryptDone = 0;
+  int _encryptTotal = 0;
+  double _encryptFileProgress = 0;
   final Set<String> _selectedVideos = {};
 
   late AnimationController _fabController;
@@ -76,6 +82,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
       _listController.forward();
       _fabController.forward();
+      unawaited(_encryptLegacyVideos());
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -90,6 +97,79 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
         );
       }
     }
+  }
+
+  Future<void> _encryptLegacyVideos() async {
+    if (_isEncrypting) return;
+    final pending = await VaultService.countUnencryptedVideos();
+    if (pending == 0 || !mounted) return;
+
+    setState(() {
+      _isEncrypting = true;
+      _encryptDone = 0;
+      _encryptTotal = pending;
+      _encryptFileProgress = 0;
+    });
+    try {
+      await VaultService.encryptPendingVideos(
+        onProgress: (done, total, fileProgress) {
+          if (!mounted) return;
+          setState(() {
+            _encryptDone = done;
+            _encryptTotal = total;
+            _encryptFileProgress = fileProgress;
+          });
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _isEncrypting = false);
+    }
+    if (!mounted) return;
+    final videos = await VaultService.getVaultVideos();
+    if (mounted) setState(() => _vaultVideos = videos);
+  }
+
+  Widget _buildEncryptionBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final overall = _encryptTotal == 0
+        ? null
+        : ((_encryptDone + _encryptFileProgress) / _encryptTotal).clamp(
+            0.0,
+            1.0,
+          );
+    return Material(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.enhanced_encryption,
+                  size: 20,
+                  color: scheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Encrypting existing videos '
+                    '(${_encryptDone.clamp(0, _encryptTotal)}/$_encryptTotal)…',
+                    style: TextStyle(color: scheme.onSecondaryContainer),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: overall),
+          ],
+        ),
+      ),
+    );
   }
 
   void _toggleSelection(String videoId) {
@@ -411,7 +491,12 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
         ],
       ),
 
-      body: _buildBody(),
+      body: Column(
+        children: [
+          if (_isEncrypting) _buildEncryptionBanner(context),
+          Expanded(child: _buildBody()),
+        ],
+      ),
 
       floatingActionButton: _buildFloatingActions(),
     );
@@ -699,43 +784,49 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
   Future<void> _playVideo(VaultVideo video) async {
     final navigator = Navigator.of(context);
-    final handle = await VaultService.prepareDirectPlayback(video);
-    if (handle.renameFailed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    final VaultPlayback playback;
+    try {
+      playback = await VaultService.openForPlayback(video);
+    } catch (e) {
+      messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            handle.copyCreated
-                ? 'File was copied for playback. Will clean up after.'
-                : 'Unable to prepare file name for playback. Trying direct play.',
-          ),
-          backgroundColor: Colors.orange.shade700,
+          content: const Text('Unable to open this video'),
+          backgroundColor: Colors.red.shade700,
         ),
       );
+      return;
+    }
+    if (!mounted) {
+      unawaited(playback.release());
+      return;
     }
 
-    if (!mounted) return;
-    navigator.push(
-      MaterialPageRoute(
+    var released = false;
+    void finish() {
+      if (!released) {
+        released = true;
+        unawaited(playback.release());
+      }
+      if (navigator.canPop()) navigator.pop();
+    }
+
+    await navigator.push(
+      MaterialPageRoute<void>(
         builder: (context) => ParthiPlayVideoPlayer(
-          videoPath: handle.playPath,
+          videoUrl: playback.url?.toString(),
+          videoPath: playback.fileHandle?.playPath,
           autoPlay: true,
-          onVideoEnded: () {
-            VaultService.restoreDirectPlayback(handle);
-            if (!mounted) return;
-            if (navigator.canPop()) {
-              navigator.pop();
-            }
-          },
-          onBackPressed: () {
-            VaultService.restoreDirectPlayback(handle);
-            if (!mounted) return;
-            if (navigator.canPop()) {
-              navigator.pop();
-            }
-          },
+          onVideoEnded: finish,
+          onBackPressed: finish,
         ),
       ),
     );
+    // Covers system back gestures that bypass the player's callbacks.
+    if (!released) {
+      released = true;
+      unawaited(playback.release());
+    }
   }
 
   Future<bool> _unhideWithProgress(
