@@ -77,12 +77,10 @@ Future<void> _unlockVaultWithVideos(WidgetTester tester) async {
     await VaultService.hardResetVault();
     await VaultService.setupVault('main-pass', 'decoy-pass');
     await VaultService.authenticate('main-pass');
-    for (final name in [
-      'A very long private video name that should wrap or ellipsize '
-          'cleanly on every device (2024).mp4',
-      'Short.mkv',
-      'Clip 3.mp4',
-    ]) {
+    const longName =
+        'A very long private video name that should wrap or ellipsize '
+        'cleanly on every device (2024).mp4';
+    for (final name in [longName, 'Short.mkv', 'Clip 3.mp4']) {
       final file = File(p.join(layoutTempDir.path, name))
         ..writeAsStringSync('x' * 2048);
       await VaultService.hideVideo(file.path);
@@ -90,6 +88,10 @@ Future<void> _unlockVaultWithVideos(WidgetTester tester) async {
   });
   VaultAutoLock.resetForTest();
 }
+
+const _longListName =
+    'An extremely long video file name that keeps going and going '
+    '(2024) [2160p] x265 HDR10+ Atmos.mkv';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -166,11 +168,7 @@ void main() {
     () => Scaffold(
       body: ListView(
         children: [
-          for (final name in [
-            'An extremely long video file name that keeps going and going '
-                '(2024) [2160p] x265 HDR10+ Atmos.mkv',
-            'Short.mp4',
-          ])
+          for (final name in [_longListName, 'Short.mp4'])
             VideoFileItem(
               videoFile: VideoFile(
                 path: '/storage/emulated/0/Movies/$name',
