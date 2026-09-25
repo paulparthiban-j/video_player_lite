@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/vault_service.dart';
@@ -81,8 +82,8 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
   }
 
   bool _validatePasswords() {
-    if (_mainPasswordController.text.length < 4) {
-      _showErrorMessage('Main password must be at least 4 characters');
+    if (_mainPasswordController.text.length < VaultService.minPasswordLength) {
+      _showErrorMessage('Main password must be at least ${VaultService.minPasswordLength} characters');
       return false;
     }
 
@@ -91,8 +92,8 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
       return false;
     }
 
-    if (_fakePasswordController.text.length < 4) {
-      _showErrorMessage('Fake password must be at least 4 characters');
+    if (_fakePasswordController.text.length < VaultService.minPasswordLength) {
+      _showErrorMessage('Fake password must be at least ${VaultService.minPasswordLength} characters');
       return false;
     }
 
@@ -115,7 +116,7 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
       _errorMessage = message;
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
   }
 
   Future<void> _setupVault() async {
@@ -126,7 +127,7 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
       _showError = false;
     });
 
-    HapticFeedback.mediumImpact();
+    unawaited(HapticFeedback.mediumImpact());
 
     final success = await VaultService.setupVault(
       _mainPasswordController.text,
@@ -134,13 +135,13 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
     );
 
     if (success) {
-      HapticFeedback.heavyImpact();
+      unawaited(HapticFeedback.heavyImpact());
 
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/vault-auth');
       }
     } else {
-      HapticFeedback.lightImpact();
+      unawaited(HapticFeedback.lightImpact());
 
       setState(() {
         _isLoading = false;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -104,7 +105,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       }
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
   }
 
   void _clearSelection() {
@@ -113,7 +114,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       _isSelectionMode = false;
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
   }
 
   Future<void> _removeSelectedVideos() async {
@@ -151,7 +152,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     }
 
     _clearSelection();
-    _loadVaultVideos();
+    unawaited(_loadVaultVideos());
   }
 
   Future<void> _shareSelectedVideos() async {
@@ -164,7 +165,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
     if (!confirmed) return;
 
-    List<String> exportedPaths = [];
+    final List<String> exportedPaths = [];
     try {
       int successCount = 0;
 
@@ -263,7 +264,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     }
 
     _clearSelection();
-    _loadVaultVideos();
+    unawaited(_loadVaultVideos());
   }
 
   Future<bool> _showConfirmDialog(String title, String message) async {
@@ -351,7 +352,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
                   );
                   if (confirmed) {
                     await VaultService.clearVault();
-                    _loadVaultVideos();
+                    unawaited(_loadVaultVideos());
                   }
                   break;
                 case 'verify_integrity':
@@ -555,7 +556,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
                                     backgroundColor: Colors.green.shade700,
                                   ),
                                 );
-                                _loadVaultVideos();
+                                unawaited(_loadVaultVideos());
                               }
                               break;
                             case 'delete':
@@ -580,7 +581,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
                                       backgroundColor: Colors.orange.shade700,
                                     ),
                                   );
-                                  _loadVaultVideos();
+                                  unawaited(_loadVaultVideos());
                                 }
                               }
                               break;
@@ -623,7 +624,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
                   }
                 },
                 onLongPress: () {
-                  HapticFeedback.mediumImpact();
+                  unawaited(HapticFeedback.mediumImpact());
                   _toggleSelection(video.id);
                 },
               ),
@@ -640,7 +641,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
         scale: _fabAnimation,
         child: FloatingActionButton(
           onPressed: () async {
-            HapticFeedback.lightImpact();
+            unawaited(HapticFeedback.lightImpact());
             await _pickAndHideVideo();
           },
           backgroundColor: Colors.red.shade700,
@@ -748,7 +749,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     void Function(VoidCallback fn)? updateDialog;
 
     try {
-      showDialog(
+      unawaited(showDialog(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
@@ -792,7 +793,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
             );
           },
         ),
-      );
+      ));
       dialogShown = true;
 
       final success = await VaultService.unhideVideo(
@@ -854,7 +855,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     void Function(VoidCallback fn)? updateDialog;
 
     try {
-      HapticFeedback.mediumImpact();
+      unawaited(HapticFeedback.mediumImpact());
 
       // Pick video file
       final result = await FilePicker.platform.pickFiles(
@@ -873,7 +874,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       if (filePath == null) return;
 
       // Show loading dialog
-      showDialog(
+      unawaited(showDialog(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
@@ -907,7 +908,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
             );
           },
         ),
-      );
+      ));
       dialogShown = true;
 
       // Hide video with encryption
@@ -925,7 +926,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       if (!mounted) return;
 
       if (success) {
-        HapticFeedback.heavyImpact();
+        unawaited(HapticFeedback.heavyImpact());
         scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
@@ -937,9 +938,9 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
           ),
         );
         // Refresh vault videos list
-        _loadVaultVideos();
+        unawaited(_loadVaultVideos());
       } else {
-        HapticFeedback.lightImpact();
+        unawaited(HapticFeedback.lightImpact());
         scaffoldMessenger.showSnackBar(
           SnackBar(
             content: const Text(
@@ -955,7 +956,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       // Check mounted before showing error
       if (!mounted) return;
 
-      HapticFeedback.lightImpact();
+      unawaited(HapticFeedback.lightImpact());
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(

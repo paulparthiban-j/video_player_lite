@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/vault_service.dart';
@@ -80,38 +82,57 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
       _showError = false;
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
 
-    final success = await VaultService.authenticate(_passwordController.text);
+    final result = await VaultService.unlock(_passwordController.text);
+    if (!mounted) return;
 
-    if (success) {
-      HapticFeedback.heavyImpact();
+    if (result.isSuccess) {
+      unawaited(HapticFeedback.heavyImpact());
 
-      // Check if security questions are set up
-      if (!await VaultService.isSecuritySetup()) {
-        if (mounted) {
-          Navigator.of(context).pushReplacementNamed('/vault-security-setup');
-        }
-      } else {
-        if (mounted) {
-          Navigator.of(context).pushReplacementNamed('/vault');
-        }
-      }
+      // Recovery questions protect the main vault only; the decoy vault must
+      // never be able to configure them.
+      final needsSecuritySetup = !VaultService.isInFakeMode &&
+          !await VaultService.isSecuritySetup();
+      if (!mounted) return;
+      unawaited(
+        Navigator.of(context).pushReplacementNamed(
+          needsSecuritySetup ? '/vault-security-setup' : '/vault',
+        ),
+      );
     } else {
-      HapticFeedback.heavyImpact();
+      unawaited(HapticFeedback.heavyImpact());
 
       setState(() {
         _isLoading = false;
         _showError = true;
-        _errorMessage = 'Incorrect password';
+        _errorMessage = _messageFor(result);
       });
 
-      _shakeController.forward().then((_) {
-        _shakeController.reverse();
-      });
+      unawaited(
+        _shakeController.forward().then((_) => _shakeController.reverse()),
+      );
 
       _passwordController.clear();
       _passwordFocusNode.requestFocus();
+    }
+  }
+
+  String _messageFor(VaultAuthResult result) {
+    switch (result.status) {
+      case VaultAuthStatus.lockedOut:
+        final wait = result.retryAfter;
+        final amount = wait.inSeconds >= 60
+            ? '${(wait.inSeconds / 60).ceil()} min'
+            : '${wait.inSeconds + 1} s';
+        return 'Too many attempts. Try again in $amount.';
+      case VaultAuthStatus.notSetUp:
+        return 'Vault is not set up yet';
+      case VaultAuthStatus.error:
+        return 'Something went wrong. Please try again.';
+      case VaultAuthStatus.invalidPassword:
+      case VaultAuthStatus.success:
+        return 'Incorrect password';
     }
   }
 
@@ -235,7 +256,7 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
                                 setState(() {
                                   _isPasswordVisible = !_isPasswordVisible;
                                 });
-                                HapticFeedback.lightImpact();
+                                unawaited(HapticFeedback.lightImpact());
                               },
                               icon: Icon(
                                 _isPasswordVisible

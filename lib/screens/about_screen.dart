@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -365,7 +367,7 @@ class AboutScreen extends StatelessWidget {
         'Check out Parthi Play — a powerful video player with advanced features.';
     const subject = 'Parthi Play';
 
-    Share.share(
+    unawaited(Share.share(
       shareText,
       subject: subject,
     ).catchError((e) {
@@ -380,7 +382,7 @@ class AboutScreen extends StatelessWidget {
         ),
       );
       return ShareResult.unavailable;
-    });
+    }));
   }
 
   void _showPrivacyPolicy(BuildContext context) {

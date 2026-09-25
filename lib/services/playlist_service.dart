@@ -256,6 +256,6 @@ class PlaylistService {
       directoryPath,
     );
     final playlistName = directoryPath.split('/').last;
-    return await createPlaylist(playlistName, videos);
+    return createPlaylist(playlistName, videos);
   }
 }

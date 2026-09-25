@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/scan_directory_service.dart';
@@ -58,7 +59,7 @@ class _ScanDirectoriesSettingsScreenState
 
     if (selectedDirectory != null && mounted) {
       // Show loading dialog
-      showDialog(
+      unawaited(showDialog(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => const AlertDialog(
@@ -70,7 +71,7 @@ class _ScanDirectoriesSettingsScreenState
             ],
           ),
         ),
-      );
+      ));
 
       try {
         // Validate directory
@@ -99,7 +100,7 @@ class _ScanDirectoriesSettingsScreenState
         );
 
         if (success) {
-          HapticFeedback.lightImpact();
+          unawaited(HapticFeedback.lightImpact());
           await _loadDirectories();
 
           if (mounted) {
@@ -166,7 +167,7 @@ class _ScanDirectoriesSettingsScreenState
       );
 
       if (success) {
-        HapticFeedback.lightImpact();
+        unawaited(HapticFeedback.lightImpact());
         await _loadDirectories();
 
         if (mounted) {
@@ -204,7 +205,7 @@ class _ScanDirectoriesSettingsScreenState
       final success = await ScanDirectoryService.resetToDefaults();
 
       if (success) {
-        HapticFeedback.mediumImpact();
+        unawaited(HapticFeedback.mediumImpact());
         await _loadDirectories();
 
         if (mounted) {

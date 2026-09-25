@@ -107,7 +107,7 @@ class ThumbnailService {
       if (_queue.contains(videoPath)) continue;
       _queue.add(videoPath);
     }
-    _runQueue();
+    unawaited(_runQueue());
   }
 
   static void setPaused(bool paused) {

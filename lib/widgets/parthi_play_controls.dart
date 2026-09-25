@@ -219,7 +219,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
                     );
 
                     await videoController.pause();
-                    videoController.reset();
+                    unawaited(videoController.reset());
 
                     // Instant navigation - removed delay
                     if (backCallback != null) {

@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
@@ -7,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/security/password_hasher.dart';
 import 'thumbnail_service.dart';
 import 'video_scanner_service.dart';
 
@@ -81,6 +84,20 @@ class VaultVideo {
   }
 }
 
+/// Outcome of a vault unlock attempt.
+enum VaultAuthStatus { success, invalidPassword, lockedOut, notSetUp, error }
+
+class VaultAuthResult {
+  final VaultAuthStatus status;
+
+  /// Time remaining before another attempt is allowed ([VaultAuthStatus.lockedOut]).
+  final Duration retryAfter;
+
+  const VaultAuthResult(this.status, {this.retryAfter = Duration.zero});
+
+  bool get isSuccess => status == VaultAuthStatus.success;
+}
+
 class VaultService {
   static const String _mainVaultKey = 'main_vault_password';
   static const String _fakeVaultKey = 'fake_vault_password';
@@ -94,11 +111,23 @@ class VaultService {
   static const String _securityAnswersKey = 'security_answers';
   static const String _securitySetupKey = 'security_setup_done';
 
+  // Brute-force protection
+  static const String _failedAttemptsKey = 'vault_failed_attempts';
+  static const String _lockedUntilKey = 'vault_locked_until_ms';
+  static const int _freeAttempts = 5;
+  static const Duration _baseLockout = Duration(seconds: 30);
+  static const Duration _maxLockout = Duration(hours: 1);
+
+  /// Minimum accepted length for vault passwords.
+  static const int minPasswordLength = 4;
+
   // Chunk size for file processing (8MB) balances speed and memory usage
   static const int _chunkSize = 8 * 1024 * 1024;
   static const int _yieldEveryBytes = 32 * 1024 * 1024;
   static const bool _useEncryption = false;
   static const String _hiddenExtension = 'vault';
+
+  static final Random _random = Random.secure();
 
   static bool _isInFakeMode = false;
   static bool _isAuthenticated = false;
@@ -112,17 +141,21 @@ class VaultService {
     return prefs.getBool(_securitySetupKey) ?? false;
   }
 
+  /// Stores recovery questions. Only the owner of the main vault may do this;
+  /// otherwise anyone holding the decoy password (or nobody at all) could set
+  /// answers and then use them to reset the main password.
   static Future<bool> setSecurityQuestions(
     List<String> questions,
     List<String> answers,
   ) async {
+    if (!_isAuthenticated || _isInFakeMode) return false;
+    if (questions.length != answers.length || questions.isEmpty) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Hash answers for security
-      final hashedAnswers = answers
-          .map((answer) => _hashPassword(answer.toLowerCase()))
-          .toList();
+      final hashedAnswers = await Future.wait(
+        answers.map((answer) => _hashSecret(normalizeAnswer(answer))),
+      );
 
       await prefs.setStringList(_securityQuestionsKey, questions);
       await prefs.setStringList(_securityAnswersKey, hashedAnswers);
@@ -141,49 +174,70 @@ class VaultService {
     return prefs.getStringList(_securityQuestionsKey);
   }
 
+  /// Canonical form of a recovery answer: case, surrounding and repeated
+  /// whitespace are ignored so "  New  York" matches "new york".
+  @visibleForTesting
+  static String normalizeAnswer(String answer) =>
+      answer.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
   static Future<bool> verifySecurityAnswers(List<String> answers) async {
+    if (await getLockoutRemaining() > Duration.zero) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final storedHashedAnswers =
           prefs.getStringList(_securityAnswersKey) ?? [];
 
-      if (storedHashedAnswers.length != answers.length) return false;
-
-      for (int i = 0; i < answers.length; i++) {
-        final inputHash = _hashPassword(answers[i].toLowerCase());
-        if (inputHash != storedHashedAnswers[i]) {
-          return false;
-        }
+      if (storedHashedAnswers.isEmpty ||
+          storedHashedAnswers.length != answers.length) {
+        await _registerFailedAttempt();
+        return false;
       }
 
-      return true;
+      var allMatch = true;
+      for (int i = 0; i < answers.length; i++) {
+        final stored = storedHashedAnswers[i];
+        // Older versions hashed `answer.toLowerCase()` without trimming.
+        final matches =
+            await _verifySecret(normalizeAnswer(answers[i]), stored) ||
+                (PasswordHasher.needsRehash(stored) &&
+                    await _verifySecret(answers[i].toLowerCase(), stored));
+        allMatch &= matches;
+      }
+
+      if (allMatch) {
+        await _clearFailedAttempts();
+      } else {
+        await _registerFailedAttempt();
+      }
+      return allMatch;
     } catch (e) {
       debugPrint('Error verifying security answers: $e');
       return false;
     }
   }
 
+  /// Sets a new main password after the recovery answers are verified.
+  ///
+  /// The decoy password is left untouched, and the new main password must
+  /// differ from it (otherwise the two vaults could not be told apart).
   static Future<bool> resetPasswordWithSecurity(
     String newPassword,
     List<String> answers,
   ) async {
+    if (newPassword.length < minPasswordLength) return false;
     if (!await verifySecurityAnswers(answers)) return false;
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      final fakeHash = prefs.getString(_fakeVaultKey) ?? '';
+      if (fakeHash.isNotEmpty && await _verifySecret(newPassword, fakeHash)) {
+        return false;
+      }
 
-      // Hash new passwords
-      final mainHash = _hashPassword(newPassword);
-      final fakeHash = _hashPassword(
-        'decoy123',
-      ); // Set a default fake password as well
-
-      // Reset both to known states
-      await prefs.setString(_mainVaultKey, mainHash);
-      await prefs.setString(_fakeVaultKey, fakeHash);
+      await prefs.setString(_mainVaultKey, await _hashSecret(newPassword));
       await prefs.setBool(_isSetupKey, true);
 
-      debugPrint('Passwords reset successfully using security questions');
+      debugPrint('Main password reset using security questions');
       return true;
     } catch (e) {
       debugPrint('Error resetting password: $e');
@@ -196,16 +250,26 @@ class VaultService {
     String mainPassword,
     String fakePassword,
   ) async {
+    if (mainPassword.length < minPasswordLength ||
+        fakePassword.length < minPasswordLength ||
+        mainPassword == fakePassword) {
+      return false;
+    }
+    // Re-running setup would silently replace the passwords of an existing
+    // vault; that must go through changePassword or hardResetVault instead.
+    if (await isVaultSetup()) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Hash passwords before storing
-      final mainHash = _hashPassword(mainPassword);
-      final fakeHash = _hashPassword(fakePassword);
+      final hashes = await Future.wait([
+        _hashSecret(mainPassword),
+        _hashSecret(fakePassword),
+      ]);
 
-      await prefs.setString(_mainVaultKey, mainHash);
-      await prefs.setString(_fakeVaultKey, fakeHash);
+      await prefs.setString(_mainVaultKey, hashes[0]);
+      await prefs.setString(_fakeVaultKey, hashes[1]);
       await prefs.setBool(_isSetupKey, true);
+      await _clearFailedAttempts();
 
       // Create vault directories
       await _createVaultDirectories();
@@ -223,45 +287,98 @@ class VaultService {
     return prefs.getBool(_isSetupKey) ?? false;
   }
 
+  /// How long the user must wait before the next unlock attempt.
+  static Future<Duration> getLockoutRemaining() async {
+    final prefs = await SharedPreferences.getInstance();
+    final untilMs = prefs.getInt(_lockedUntilKey) ?? 0;
+    final remaining = untilMs - DateTime.now().millisecondsSinceEpoch;
+    return remaining > 0 ? Duration(milliseconds: remaining) : Duration.zero;
+  }
+
+  @visibleForTesting
+  static Duration lockoutFor(int failedAttempts) {
+    if (failedAttempts < _freeAttempts) return Duration.zero;
+    final exponent = (failedAttempts - _freeAttempts).clamp(0, 16);
+    final lockout = _baseLockout * (1 << exponent);
+    return lockout > _maxLockout ? _maxLockout : lockout;
+  }
+
+  static Future<void> _registerFailedAttempt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final attempts = (prefs.getInt(_failedAttemptsKey) ?? 0) + 1;
+    await prefs.setInt(_failedAttemptsKey, attempts);
+    final lockout = lockoutFor(attempts);
+    if (lockout > Duration.zero) {
+      await prefs.setInt(
+        _lockedUntilKey,
+        DateTime.now().add(lockout).millisecondsSinceEpoch,
+      );
+    }
+  }
+
+  static Future<void> _clearFailedAttempts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_failedAttemptsKey);
+    await prefs.remove(_lockedUntilKey);
+  }
+
   // Authentication
-  static Future<bool> authenticate(String password) async {
+  static Future<bool> authenticate(String password) async =>
+      (await unlock(password)).isSuccess;
+
+  /// Attempts to unlock the vault, applying brute-force throttling.
+  static Future<VaultAuthResult> unlock(String password) async {
     try {
       final prefs = await SharedPreferences.getInstance();
 
       if (!await isVaultSetup()) {
-        return false; // Don't auto-setup with default passwords, secure by default
+        return const VaultAuthResult(VaultAuthStatus.notSetUp);
+      }
+
+      final lockout = await getLockoutRemaining();
+      if (lockout > Duration.zero) {
+        return VaultAuthResult(VaultAuthStatus.lockedOut, retryAfter: lockout);
       }
 
       final mainHash = prefs.getString(_mainVaultKey) ?? '';
       final fakeHash = prefs.getString(_fakeVaultKey) ?? '';
 
-      final inputHash = _hashPassword(password);
+      // Check both so timing does not reveal which vault a password opens.
+      final results = await Future.wait([
+        _verifySecret(password, mainHash),
+        _verifySecret(password, fakeHash),
+      ]);
+      final isMain = results[0];
+      final isFake = results[1];
 
-      if (inputHash == mainHash) {
-        _isAuthenticated = true;
-        _isInFakeMode = false;
-        await prefs.setBool(_fakeModeKey, false);
-        debugPrint('Authenticated with main vault');
-
-        // Ensure directories exist
-        await _createVaultDirectories();
-
-        return true;
-      } else if (inputHash == fakeHash) {
-        _isAuthenticated = true;
-        _isInFakeMode = true;
-        await prefs.setBool(_fakeModeKey, true);
-        debugPrint('Authenticated with fake vault');
-
-        await _createVaultDirectories();
-
-        return true;
+      if (!isMain && !isFake) {
+        await _registerFailedAttempt();
+        final lockout = await getLockoutRemaining();
+        return lockout > Duration.zero
+            ? VaultAuthResult(VaultAuthStatus.lockedOut, retryAfter: lockout)
+            : const VaultAuthResult(VaultAuthStatus.invalidPassword);
       }
 
-      return false;
+      await _clearFailedAttempts();
+      _isAuthenticated = true;
+      _isInFakeMode = !isMain;
+      await prefs.setBool(_fakeModeKey, _isInFakeMode);
+
+      // Transparently upgrade hashes written by older app versions.
+      final matchedKey = isMain ? _mainVaultKey : _fakeVaultKey;
+      final matchedHash = isMain ? mainHash : fakeHash;
+      if (PasswordHasher.needsRehash(matchedHash)) {
+        await prefs.setString(matchedKey, await _hashSecret(password));
+      }
+
+      debugPrint(
+        isMain ? 'Authenticated with main vault' : 'Authenticated with fake vault',
+      );
+      await _createVaultDirectories();
+      return const VaultAuthResult(VaultAuthStatus.success);
     } catch (e) {
       debugPrint('Authentication error: $e');
-      return false;
+      return const VaultAuthResult(VaultAuthStatus.error);
     }
   }
 
@@ -370,7 +487,7 @@ class VaultService {
         originalExtension: path.extension(videoPath).replaceFirst('.', ''),
         fileSize: sourceSize,
         hiddenDate: DateTime.now(),
-        thumbnail: await _generateThumbnail(videoPath, encryptionKey),
+        thumbnail: '',
         encryptionKey: encryptionKey,
         checksum: checksum,
         isEncrypted: _useEncryption,
@@ -400,17 +517,19 @@ class VaultService {
       final videos = await _getVaultVideos();
       final video = videos.firstWhere((v) => v.id == videoId);
       bool success = false;
+      // Never clobber a file that has since appeared at the original path.
+      final destination = await availablePath(video.originalPath);
 
       if (video.isEncrypted) {
         success = await _decryptVideoToPath(
           video,
-          video.originalPath,
+          destination,
           onProgress: onProgress,
         );
       } else {
         success = await _moveFileToPath(
           sourceFile: File(video.hiddenPath),
-          destinationPath: video.originalPath,
+          destinationPath: destination,
           onProgress: onProgress,
         );
       }
@@ -429,20 +548,40 @@ class VaultService {
 
   static Future<List<VaultVideo>> getVaultVideos() async {
     if (!_isAuthenticated) return [];
-    return await _getVaultVideos();
+    return _getVaultVideos();
   }
 
   // Private Helper Methods
-  static String _hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    final hash = sha256.convert(bytes);
-    return hash.toString();
+  /// Returns [desiredPath], or `name (1).ext`, `name (2).ext`, ... if taken.
+  @visibleForTesting
+  static Future<String> availablePath(String desiredPath) async {
+    if (!await File(desiredPath).exists()) return desiredPath;
+    final dir = path.dirname(desiredPath);
+    final base = path.basenameWithoutExtension(desiredPath);
+    final ext = path.extension(desiredPath);
+    for (var i = 1; i < 10000; i++) {
+      final candidate = path.join(dir, '$base ($i)$ext');
+      if (!await File(candidate).exists()) return candidate;
+    }
+    return path.join(dir, '${base}_${_generateVideoId()}$ext');
+  }
+
+  // Key derivation is deliberately slow, so run it off the UI isolate.
+  static Future<String> _hashSecret(String secret) =>
+      Isolate.run(() => PasswordHasher.hash(secret));
+
+  static Future<bool> _verifySecret(String secret, String encoded) {
+    if (encoded.isEmpty) return Future.value(false);
+    return Isolate.run(() => PasswordHasher.verify(secret, encoded));
   }
 
   static String _generateVideoId() {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final random = DateTime.now().microsecondsSinceEpoch;
-    return '${timestamp}_$random';
+    final suffix = List<String>.generate(
+      8,
+      (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    return '${timestamp}_$suffix';
   }
 
 
@@ -617,24 +756,31 @@ class VaultService {
     }
   }
 
+  /// Replaces both passwords. Requires an unlocked *main* vault and the
+  /// current main password; the decoy password cannot change the real one.
   static Future<bool> changePassword(
     String oldPassword,
     String newMainPassword,
     String newFakePassword,
   ) async {
-    if (!_isAuthenticated) return false;
+    if (!_isAuthenticated || _isInFakeMode) return false;
+    if (newMainPassword.length < minPasswordLength ||
+        newFakePassword.length < minPasswordLength ||
+        newMainPassword == newFakePassword) {
+      return false;
+    }
 
     try {
-      // Verify old password
-      if (!await authenticate(oldPassword)) return false;
-
       final prefs = await SharedPreferences.getInstance();
+      final mainHash = prefs.getString(_mainVaultKey) ?? '';
+      if (!await _verifySecret(oldPassword, mainHash)) return false;
 
-      final newMainHash = _hashPassword(newMainPassword);
-      final newFakeHash = _hashPassword(newFakePassword);
-
-      await prefs.setString(_mainVaultKey, newMainHash);
-      await prefs.setString(_fakeVaultKey, newFakeHash);
+      final hashes = await Future.wait([
+        _hashSecret(newMainPassword),
+        _hashSecret(newFakePassword),
+      ]);
+      await prefs.setString(_mainVaultKey, hashes[0]);
+      await prefs.setString(_fakeVaultKey, hashes[1]);
 
       debugPrint('Passwords changed successfully');
       return true;
@@ -670,6 +816,8 @@ class VaultService {
       await prefs.remove(_securityQuestionsKey);
       await prefs.remove(_securityAnswersKey);
       await prefs.remove(_securitySetupKey);
+      await prefs.remove(_failedAttemptsKey);
+      await prefs.remove(_lockedUntilKey);
 
       _isAuthenticated = false;
       _isInFakeMode = false;
@@ -677,32 +825,6 @@ class VaultService {
       debugPrint('Vault hard reset completed');
     } catch (e) {
       debugPrint('Error during hard reset: $e');
-    }
-  }
-
-  static Future<String> _generateThumbnail(
-    String videoPath,
-    String encryptionKey,
-  ) async {
-    try {
-      final thumbnailDir = Directory(
-        '${await _getVaultDirectory()}/thumbnails',
-      );
-      if (!await thumbnailDir.exists()) {
-        await thumbnailDir.create(recursive: true);
-      }
-
-      final thumbnailPath =
-          '${thumbnailDir.path}/${DateTime.now().millisecondsSinceEpoch}_thumb.jpg';
-
-      // Just creating a dummy file for now
-      // In real app, generate actual thumb
-      await File(thumbnailPath).writeAsBytes([0, 0, 0, 0]);
-
-      return thumbnailPath;
-    } catch (e) {
-      debugPrint('Error generating thumbnail: $e');
-      return '';
     }
   }
 

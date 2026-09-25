@@ -514,7 +514,7 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
                                 return const SizedBox.shrink();
                               }
 
-                              Widget videoWidget = Video(
+                              final Widget videoWidget = Video(
                                 controller: videoController,
                                 fit: BoxFit.contain,
                                 controls: NoVideoControls,

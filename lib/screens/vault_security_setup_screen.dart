@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/vault_service.dart';
@@ -78,7 +79,7 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
       _errorMessage = message;
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
   }
 
   Future<void> _setupSecurityQuestions() async {
@@ -89,7 +90,7 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
       _showError = false;
     });
 
-    HapticFeedback.mediumImpact();
+    unawaited(HapticFeedback.mediumImpact());
 
     final questions = _questionControllers
         .map((controller) => controller.text.trim())
@@ -101,10 +102,10 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
     final success = await VaultService.setSecurityQuestions(questions, answers);
 
     if (success) {
-      HapticFeedback.heavyImpact();
+      unawaited(HapticFeedback.heavyImpact());
 
       if (!mounted) return;
-      showDialog(
+      unawaited(showDialog(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Security Questions Set'),
@@ -129,9 +130,9 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
             ),
           ],
         ),
-      );
+      ));
     } else {
-      HapticFeedback.lightImpact();
+      unawaited(HapticFeedback.lightImpact());
 
       if (!mounted) return;
       setState(() {
@@ -260,7 +261,7 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
                                     _answerVisibility[index] =
                                         !_answerVisibility[index];
                                   });
-                                  HapticFeedback.lightImpact();
+                                  unawaited(HapticFeedback.lightImpact());
                                 },
                                 icon: Icon(
                                   _answerVisibility[index]

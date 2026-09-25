@@ -385,6 +385,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         },
         child: ListView.builder(
           controller: _scrollController,
+          // Keeps compatibility with Flutter versions before ScrollCacheExtent.
+          // ignore: deprecated_member_use
           cacheExtent: 600,
           padding: const EdgeInsets.all(16),
           itemCount: _filteredVideoFiles.length,

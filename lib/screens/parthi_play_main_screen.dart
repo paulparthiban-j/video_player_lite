@@ -332,43 +332,23 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     }
   }
 
+  /// Recomputes [_filteredVideos]. Callers are expected to wrap this in
+  /// `setState`.
   void _applyFilter() {
-    setState(() {
-      if (_currentFilter == 'folders') {
-        // Show folders list
-        _filteredVideos = [];
-      } else if (_currentFilter == 'streaming') {
-        _filteredVideos = _streamVideos;
-      } else if (_currentFolderName != null) {
-        // Show videos from selected folder
-        _filteredVideos = _foldersMap[_currentFolderName] ?? [];
-      } else if (_currentFilter == null && _currentFolderName == null) {
-        // Only show video files
-        _filteredVideos = _localVideos
-            .where((v) => v.type == MediaType.video)
-            .toList();
-      } else if (_currentFilter != null) {
-        if (_currentFilter == 'videos') {
-          _filteredVideos = _localVideos
-              .where((v) => v.type == MediaType.video)
-              .toList();
-        } else {
-          // Default to videos only for any other filter
-          _filteredVideos = _localVideos
-              .where((v) => v.type == MediaType.video)
-              .toList();
-        }
-      } else {
-        // Default case - show videos only
-        _filteredVideos = _localVideos
-            .where((v) => v.type == MediaType.video)
-            .toList();
-      }
-    });
+    if (_currentFilter == 'folders') {
+      _filteredVideos = [];
+    } else if (_currentFilter == 'streaming') {
+      _filteredVideos = _streamVideos;
+    } else if (_currentFolderName != null) {
+      _filteredVideos = _foldersMap[_currentFolderName] ?? [];
+    } else {
+      _filteredVideos =
+          _localVideos.where((v) => v.type == MediaType.video).toList();
+    }
   }
 
-  void _onChipTap(String label) async {
-    HapticFeedback.lightImpact();
+  Future<void> _onChipTap(String label) async {
+    unawaited(HapticFeedback.lightImpact());
     if (label == 'Privacy') {
       final isSetup = await VaultService.isVaultSetup();
       if (!mounted) return;
@@ -376,7 +356,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
       return;
     }
     if (label == 'Streaming') {
-      _loadStreams();
+      unawaited(_loadStreams());
     }
     setState(() {
       _currentFilter =
@@ -464,7 +444,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     final recentUrls = await _getRecentUrls();
     if (!mounted) return;
 
-    showDialog(
+    unawaited(showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Play from URL'),
@@ -604,7 +584,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
           ),
         ],
       ),
-    );
+    ));
   }
 
   void _showSortOptions() {
@@ -1049,7 +1029,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     final nameController = TextEditingController();
     final urlController = TextEditingController();
 
-    showDialog(
+    unawaited(showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Add Stream'),
@@ -1106,7 +1086,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
           ),
         ],
       ),
-    );
+    ));
   }
 
   Future<void> _removeStream(VideoFile video) async {
@@ -1448,6 +1428,8 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
         return false;
       },
       child: CustomScrollView(
+        // Keeps compatibility with Flutter versions before ScrollCacheExtent.
+        // ignore: deprecated_member_use
         cacheExtent: 800,
         slivers: [
           SliverToBoxAdapter(
@@ -1784,7 +1766,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
                           );
                           _showSuccessSnackBar('Link copied');
                         } else {
-                          _shareVideo(video);
+                          await _shareVideo(video);
                         }
                         break;
                     }
@@ -1862,7 +1844,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
   }
 
   void _showVideoInfo(VideoFile video) {
-    showDialog(
+    unawaited(showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(video.name),
@@ -1891,10 +1873,10 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
           ),
         ],
       ),
-    );
+    ));
   }
 
-  void _shareVideo(VideoFile video) async {
+  Future<void> _shareVideo(VideoFile video) async {
     try {
       final shareFile = await ShareService.prepareShareFile(video.path);
       if (!mounted) return;
@@ -1976,8 +1958,8 @@ class _VideoThumbnailWidgetState extends State<_VideoThumbnailWidget> {
         }
       }
       if (mounted) {
-        ThumbnailService.generateThumbnailsBatch([widget.videoPath]);
-        _retryLoadThumbnail();
+        unawaited(ThumbnailService.generateThumbnailsBatch([widget.videoPath]));
+        unawaited(_retryLoadThumbnail());
       }
     } else {
       if (!mounted) return;
