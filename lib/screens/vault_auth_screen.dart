@@ -92,8 +92,8 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
 
       // Recovery questions protect the main vault only; the decoy vault must
       // never be able to configure them.
-      final needsSecuritySetup = !VaultService.isInFakeMode &&
-          !await VaultService.isSecuritySetup();
+      final needsSecuritySetup =
+          !VaultService.isInFakeMode && !await VaultService.isSecuritySetup();
       if (!mounted) return;
       unawaited(
         Navigator.of(context).pushReplacementNamed(
@@ -152,7 +152,9 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: isDark ? [Colors.black, Colors.grey.shade900] : [surface, surfaceVariant],
+            colors: isDark
+                ? [Colors.black, Colors.grey.shade900]
+                : [surface, surfaceVariant],
           ),
         ),
         child: SafeArea(
@@ -205,10 +207,7 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
 
                     Text(
                       'Enter password to access your videos',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: onSurfaceVariant,
-                      ),
+                      style: TextStyle(fontSize: 16, color: onSurfaceVariant),
                       textAlign: TextAlign.center,
                     ),
 
@@ -366,10 +365,7 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
                       },
                       child: Text(
                         'Forgot password?',
-                        style: TextStyle(
-                          color: onSurfaceVariant,
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: onSurfaceVariant, fontSize: 14),
                       ),
                     ),
 

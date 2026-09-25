@@ -42,8 +42,9 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
     with WidgetsBindingObserver {
   VideoPlayerControllerNotifier? _videoController;
   StateController<VoidCallback?>? _backCallbackController;
-  static const MethodChannel _orientationChannel =
-      MethodChannel('parthi_play/orientation');
+  static const MethodChannel _orientationChannel = MethodChannel(
+    'parthi_play/orientation',
+  );
   StreamSubscription<void>? _performanceSettingsSubscription;
   bool _autoPerfMonitoring = false;
   bool _autoPerfApplied = false;
@@ -204,9 +205,7 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Resume playback?'),
-        content: Text(
-          'Continue from ${_formatDuration(savedPosition)}?',
-        ),
+        content: Text('Continue from ${_formatDuration(savedPosition)}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -241,9 +240,7 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
   void _applyRuntimePerformanceSettings() {
     final controller = _videoController;
     if (controller == null) return;
-    controller.applyHdrToneMapping(
-      PerformanceService.isHdrToneMappingEnabled,
-    );
+    controller.applyHdrToneMapping(PerformanceService.isHdrToneMappingEnabled);
   }
 
   @override
@@ -308,7 +305,8 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
     final jankRatio = jankCount / _jankSamples.length;
 
     if (!_autoPerfApplied) {
-      final canApply = _autoPerfLastAppliedAt == null ||
+      final canApply =
+          _autoPerfLastAppliedAt == null ||
           now.difference(_autoPerfLastAppliedAt!) >= _autoPerfCooldown;
       if (canApply && jankRatio >= 0.4) {
         debugPrint(
@@ -326,7 +324,8 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
       return;
     }
 
-    final canRecover = _autoPerfLastRecoveredAt == null ||
+    final canRecover =
+        _autoPerfLastRecoveredAt == null ||
         now.difference(_autoPerfLastRecoveredAt!) >= _autoPerfCooldown;
     if (canRecover && jankRatio <= 0.15) {
       debugPrint(
@@ -391,16 +390,15 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
     _applyOrientation(orientation);
     _orientationRetryTimer?.cancel();
     int attempts = 0;
-    _orientationRetryTimer = Timer.periodic(
-      const Duration(milliseconds: 400),
-      (timer) {
-        attempts++;
-        _applyOrientation(orientation);
-        if (attempts >= 3) {
-          timer.cancel();
-        }
-      },
-    );
+    _orientationRetryTimer = Timer.periodic(const Duration(milliseconds: 400), (
+      timer,
+    ) {
+      attempts++;
+      _applyOrientation(orientation);
+      if (attempts >= 3) {
+        timer.cancel();
+      }
+    });
   }
 
   void _applyAutoOrientationForAspectRatio(double aspectRatio) {
@@ -536,7 +534,7 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
                         ),
                       ),
                     ),
-                  if (!isInPip)
+                    if (!isInPip)
                       Positioned.fill(
                         child: Consumer(
                           builder: (context, ref, child) {
@@ -550,7 +548,7 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
                           },
                         ),
                       ),
-                  if (!isInPip)
+                    if (!isInPip)
                       Positioned.fill(
                         child: Consumer(
                           builder: (context, ref, child) {
@@ -595,9 +593,7 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
                             ),
                             onPressed: () {
                               ref
-                                  .read(
-                                    videoPlayerControllerProvider.notifier,
-                                  )
+                                  .read(videoPlayerControllerProvider.notifier)
                                   .togglePlayPause();
                             },
                           ),
@@ -629,10 +625,7 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
               valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
             ),
             SizedBox(height: 12),
-            Text(
-              'Switching decoder...',
-              style: TextStyle(color: Colors.white),
-            ),
+            Text('Switching decoder...', style: TextStyle(color: Colors.white)),
           ],
         ),
       ),

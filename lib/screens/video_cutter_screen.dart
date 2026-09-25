@@ -103,17 +103,17 @@ class _VideoCutterScreenState extends State<VideoCutterScreen> {
         } else {
           if (!mounted) return;
           setState(() => _isProcessing = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to cut video')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Failed to cut video')));
         }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -177,10 +177,7 @@ class _VideoCutterScreenState extends State<VideoCutterScreen> {
                       child: Center(child: Video(controller: _controller)),
                     ),
                   ),
-                  Expanded(
-                    flex: 2,
-                    child: _buildControlsPanel(),
-                  ),
+                  Expanded(flex: 2, child: _buildControlsPanel()),
                 ],
               )
             : Column(
@@ -192,10 +189,7 @@ class _VideoCutterScreenState extends State<VideoCutterScreen> {
                       child: Center(child: Video(controller: _controller)),
                     ),
                   ),
-                  Expanded(
-                    flex: 2,
-                    child: _buildControlsPanel(),
-                  ),
+                  Expanded(flex: 2, child: _buildControlsPanel()),
                 ],
               ),
       ),
@@ -204,9 +198,10 @@ class _VideoCutterScreenState extends State<VideoCutterScreen> {
 
   Widget _buildControlsPanel() {
     final maxMs = _duration.inMilliseconds.toDouble();
-    final currentMs = _position.inMilliseconds
-        .toDouble()
-        .clamp(0.0, maxMs > 0 ? maxMs : 1.0);
+    final currentMs = _position.inMilliseconds.toDouble().clamp(
+      0.0,
+      maxMs > 0 ? maxMs : 1.0,
+    );
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -284,9 +279,7 @@ class _VideoCutterScreenState extends State<VideoCutterScreen> {
             },
             onChangeStart: (values) => _player.pause(),
             onChangeEnd: (values) {
-              _player.seek(
-                Duration(milliseconds: values.start.toInt()),
-              );
+              _player.seek(Duration(milliseconds: values.start.toInt()));
             },
           ),
           const SizedBox(height: 16),

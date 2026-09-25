@@ -25,10 +25,10 @@ class StreamSource {
   }
 
   Map<String, dynamic> toJson() => {
-        'title': title,
-        'url': url,
-        'isLive': isLive,
-      };
+    'title': title,
+    'url': url,
+    'isLive': isLive,
+  };
 }
 
 class StreamSourcesService {

@@ -2,7 +2,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
 class SystemControlsService {
-  static const MethodChannel _channel = MethodChannel('next_player/system_controls');
+  static const MethodChannel _channel = MethodChannel(
+    'next_player/system_controls',
+  );
   static double _currentBrightness = 0.5;
   static double _currentVolume = 0.5;
   static bool _isInitialized = false;

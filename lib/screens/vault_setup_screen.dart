@@ -83,7 +83,9 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
 
   bool _validatePasswords() {
     if (_mainPasswordController.text.length < VaultService.minPasswordLength) {
-      _showErrorMessage('Main password must be at least ${VaultService.minPasswordLength} characters');
+      _showErrorMessage(
+        'Main password must be at least ${VaultService.minPasswordLength} characters',
+      );
       return false;
     }
 
@@ -93,7 +95,9 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
     }
 
     if (_fakePasswordController.text.length < VaultService.minPasswordLength) {
-      _showErrorMessage('Fake password must be at least ${VaultService.minPasswordLength} characters');
+      _showErrorMessage(
+        'Fake password must be at least ${VaultService.minPasswordLength} characters',
+      );
       return false;
     }
 
@@ -223,10 +227,7 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
 
                       Text(
                         'Create passwords to protect your private videos',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: onSurfaceVariant,
-                        ),
+                        style: TextStyle(fontSize: 16, color: onSurfaceVariant),
                         textAlign: TextAlign.center,
                       ),
 
@@ -438,8 +439,9 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final onSurface = colorScheme.onSurface;
     final onSurfaceVariant = colorScheme.onSurfaceVariant;
-    final fieldColor =
-        isDark ? Colors.grey.shade900.withValues(alpha: 0.5) : colorScheme.surfaceContainerHighest;
+    final fieldColor = isDark
+        ? Colors.grey.shade900.withValues(alpha: 0.5)
+        : colorScheme.surfaceContainerHighest;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -453,10 +455,7 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: TextStyle(color: onSurfaceVariant, fontSize: 14),
-        ),
+        Text(subtitle, style: TextStyle(color: onSurfaceVariant, fontSize: 14)),
         const SizedBox(height: 16),
 
         // Password Field

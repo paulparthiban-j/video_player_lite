@@ -749,51 +749,55 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     void Function(VoidCallback fn)? updateDialog;
 
     try {
-      unawaited(showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            updateDialog = setDialogState;
-            return AlertDialog(
-              content: SizedBox(
-                width: 320,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title),
-                    if (progressPrefix != null) ...[
-                      const SizedBox(height: 4),
+      unawaited(
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              updateDialog = setDialogState;
+              return AlertDialog(
+                content: SizedBox(
+                  width: 320,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title),
+                      if (progressPrefix != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          progressPrefix,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: progressValue.clamp(0.0, 1.0),
+                        backgroundColor: Colors.grey.shade300,
+                        color: Colors.green.shade700,
+                      ),
+                      const SizedBox(height: 8),
                       Text(
-                        progressPrefix,
+                        '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(
-                      value: progressValue.clamp(0.0, 1.0),
-                      backgroundColor: Colors.grey.shade300,
-                      color: Colors.green.shade700,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
-      ));
+      );
       dialogShown = true;
 
       final success = await VaultService.unhideVideo(
@@ -874,41 +878,43 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       if (filePath == null) return;
 
       // Show loading dialog
-      unawaited(showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            updateDialog = setDialogState;
-            return AlertDialog(
-              content: SizedBox(
-                width: 320,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Securing video in vault...'),
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(
-                      value: progressValue.clamp(0.0, 1.0),
-                      backgroundColor: Colors.grey.shade300,
-                      color: Colors.red.shade700,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 12,
+      unawaited(
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              updateDialog = setDialogState;
+              return AlertDialog(
+                content: SizedBox(
+                  width: 320,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Securing video in vault...'),
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: progressValue.clamp(0.0, 1.0),
+                        backgroundColor: Colors.grey.shade300,
+                        color: Colors.red.shade700,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
-      ));
+      );
       dialogShown = true;
 
       // Hide video with encryption

@@ -60,8 +60,8 @@ class VaultVideo {
     final fileName = json['fileName'] ?? '';
     final extension =
         (json['originalExtension'] ?? '').toString().trim().isNotEmpty
-            ? json['originalExtension'].toString()
-            : _getExtensionFromName(fileName);
+        ? json['originalExtension'].toString()
+        : _getExtensionFromName(fileName);
     return VaultVideo(
       id: json['id'],
       originalPath: json['originalPath'],
@@ -199,8 +199,8 @@ class VaultService {
         // Older versions hashed `answer.toLowerCase()` without trimming.
         final matches =
             await _verifySecret(normalizeAnswer(answers[i]), stored) ||
-                (PasswordHasher.needsRehash(stored) &&
-                    await _verifySecret(answers[i].toLowerCase(), stored));
+            (PasswordHasher.needsRehash(stored) &&
+                await _verifySecret(answers[i].toLowerCase(), stored));
         allMatch &= matches;
       }
 
@@ -372,7 +372,9 @@ class VaultService {
       }
 
       debugPrint(
-        isMain ? 'Authenticated with main vault' : 'Authenticated with fake vault',
+        isMain
+            ? 'Authenticated with main vault'
+            : 'Authenticated with fake vault',
       );
       await _createVaultDirectories();
       return const VaultAuthResult(VaultAuthStatus.success);
@@ -584,7 +586,6 @@ class VaultService {
     return '${timestamp}_$suffix';
   }
 
-
   static Future<Directory> _getVaultDirectory() async {
     final appDir = await getApplicationDocumentsDirectory();
     final vaultName = _isInFakeMode ? 'fake_vault' : 'main_vault';
@@ -664,8 +665,6 @@ class VaultService {
     final key = encrypt.Key.fromSecureRandom(32); // 256-bit key
     return key.base64;
   }
-
-
 
   // Legacy/Helper
   static Future<bool> deleteFromVault(String videoId) async {
@@ -863,7 +862,10 @@ class VaultService {
 
     try {
       final tempDir = await getTemporaryDirectory();
-      final exportPath = path.join(tempDir.path, 'vault_play_${video.fileName}');
+      final exportPath = path.join(
+        tempDir.path,
+        'vault_play_${video.fileName}',
+      );
       final exportFile = File(exportPath);
 
       if (await exportFile.exists()) {
@@ -871,11 +873,7 @@ class VaultService {
       }
 
       final success = video.isEncrypted
-          ? await _decryptVideoToPath(
-              video,
-              exportPath,
-              onProgress: onProgress,
-            )
+          ? await _decryptVideoToPath(video, exportPath, onProgress: onProgress)
           : await _copyVideoToPath(
               sourcePath: video.hiddenPath,
               destinationPath: exportPath,
@@ -894,8 +892,7 @@ class VaultService {
     VaultVideo video,
     String destinationPath, {
     ValueChanged<double>? onProgress,
-  }
-  ) async {
+  }) async {
     RandomAccessFile? hiddenRaf;
     IOSink? destSink;
     File? destFile;

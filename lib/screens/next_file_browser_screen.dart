@@ -211,9 +211,7 @@ class _NextFileBrowserScreenState extends State<NextFileBrowserScreen> {
             fontSize: 18,
           ),
         ),
-        iconTheme: IconThemeData(
-          color: isDark ? Colors.white : Colors.black,
-        ),
+        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black),
         actions: [
           IconButton(
             onPressed: () {
@@ -227,10 +225,7 @@ class _NextFileBrowserScreenState extends State<NextFileBrowserScreen> {
             ),
           ),
           PopupMenuButton<String>(
-            icon: Icon(
-              Icons.sort,
-              color: isDark ? Colors.white : Colors.black,
-            ),
+            icon: Icon(Icons.sort, color: isDark ? Colors.white : Colors.black),
             onSelected: (value) {
               setState(() {
                 _sortBy = value;

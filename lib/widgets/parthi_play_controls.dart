@@ -15,8 +15,7 @@ class ParthiPlayControls extends ConsumerStatefulWidget {
   const ParthiPlayControls({super.key});
 
   @override
-  ConsumerState<ParthiPlayControls> createState() =>
-      _ParthiPlayControlsState();
+  ConsumerState<ParthiPlayControls> createState() => _ParthiPlayControlsState();
 }
 
 class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
@@ -564,9 +563,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
                       padding: const EdgeInsets.only(top: 2),
                       child: Align(
                         alignment: Alignment.centerRight,
-                        child: Text(
-                          '',
-                        ),
+                        child: Text(''),
                       ),
                     ),
                   Padding(
@@ -775,7 +772,8 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       return;
     }
 
-    final title = videoState.videoPath?.split(Platform.pathSeparator).last ??
+    final title =
+        videoState.videoPath?.split(Platform.pathSeparator).last ??
         videoState.videoUrl ??
         'Parthi Play';
 
@@ -806,9 +804,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
     if (qualities.isEmpty) return const SizedBox.shrink();
 
     final selected = ref.watch(
-      videoPlayerControllerProvider.select(
-        (s) => s.selectedYoutubeQuality,
-      ),
+      videoPlayerControllerProvider.select((s) => s.selectedYoutubeQuality),
     );
 
     String menuLabel(YoutubeStreamQuality q) {

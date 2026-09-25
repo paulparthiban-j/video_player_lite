@@ -320,7 +320,9 @@ class _VideoItemThumbnailState extends State<_VideoItemThumbnail> {
       }
     }
     if (!mounted) return;
-    unawaited(ThumbnailService.generateThumbnailsBatch([widget.videoFile.path]));
+    unawaited(
+      ThumbnailService.generateThumbnailsBatch([widget.videoFile.path]),
+    );
     unawaited(_retryLoadThumbnail());
   }
 

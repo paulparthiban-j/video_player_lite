@@ -105,32 +105,34 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
       unawaited(HapticFeedback.heavyImpact());
 
       if (!mounted) return;
-      unawaited(showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Security Questions Set'),
-          content: const Text(
-            'Your security questions have been set up successfully!\n\nYou can now use them to reset your password if needed.',
-          ),
-          backgroundColor: Colors.grey.shade900,
-          titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18),
-          contentTextStyle: const TextStyle(
-            color: Colors.white70,
-            fontSize: 16,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(
-                  context,
-                ).pushReplacementNamed('/vault'); // Go to vault
-              },
-              child: const Text('OK', style: TextStyle(color: Colors.red)),
+      unawaited(
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Security Questions Set'),
+            content: const Text(
+              'Your security questions have been set up successfully!\n\nYou can now use them to reset your password if needed.',
             ),
-          ],
+            backgroundColor: Colors.grey.shade900,
+            titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18),
+            contentTextStyle: const TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Close dialog
+                  Navigator.of(
+                    context,
+                  ).pushReplacementNamed('/vault'); // Go to vault
+                },
+                child: const Text('OK', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
         ),
-      ));
+      );
     } else {
       unawaited(HapticFeedback.lightImpact());
 

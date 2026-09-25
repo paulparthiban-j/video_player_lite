@@ -12,8 +12,7 @@ class AboutScreen extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
-    final cardBorder =
-        isDark ? const Color(0xFF2A2A2A) : Colors.grey[300]!;
+    final cardBorder = isDark ? const Color(0xFF2A2A2A) : Colors.grey[300]!;
     final primaryText = colorScheme.onSurface;
     final secondaryText = colorScheme.onSurfaceVariant;
 
@@ -148,10 +147,7 @@ class AboutScreen extends StatelessWidget {
                     '- Gesture controls for easy navigation',
                   ),
                   _buildFeatureItem(context, '- Adjustable playback speed'),
-                  _buildFeatureItem(
-                    context,
-                    '- Multiple aspect ratio options',
-                  ),
+                  _buildFeatureItem(context, '- Multiple aspect ratio options'),
                   _buildFeatureItem(context, '- Subtitle support'),
                   _buildFeatureItem(context, '- Hardware acceleration'),
                   _buildFeatureItem(context, '- Performance optimization'),
@@ -367,22 +363,19 @@ class AboutScreen extends StatelessWidget {
         'Check out Parthi Play — a powerful video player with advanced features.';
     const subject = 'Parthi Play';
 
-    unawaited(Share.share(
-      shareText,
-      subject: subject,
-    ).catchError((e) {
-      debugPrint('Error sharing app: $e');
-      if (!context.mounted) return ShareResult.unavailable;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to open share sheet'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return ShareResult.unavailable;
-    }));
+    unawaited(
+      Share.share(shareText, subject: subject).catchError((e) {
+        debugPrint('Error sharing app: $e');
+        if (!context.mounted) return ShareResult.unavailable;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open share sheet'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return ShareResult.unavailable;
+      }),
+    );
   }
 
   void _showPrivacyPolicy(BuildContext context) {

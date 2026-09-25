@@ -76,11 +76,7 @@ class _LaunchScreenState extends State<LaunchScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: isDark
-              ? const [
-                  Color(0xFF000000),
-                  Color(0xFF1A1A1A),
-                  Color(0xFF000000),
-                ]
+              ? const [Color(0xFF000000), Color(0xFF1A1A1A), Color(0xFF000000)]
               : [
                   colorScheme.surface,
                   colorScheme.surfaceContainerHighest,

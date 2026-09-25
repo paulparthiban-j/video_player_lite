@@ -59,19 +59,21 @@ class _ScanDirectoriesSettingsScreenState
 
     if (selectedDirectory != null && mounted) {
       // Show loading dialog
-      unawaited(showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Validating directory...'),
-            ],
+      unawaited(
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Validating directory...'),
+              ],
+            ),
           ),
         ),
-      ));
+      );
 
       try {
         // Validate directory

@@ -17,9 +17,9 @@ void main() {
     tempRoot = await Directory.systemTemp.createTemp('vault_test_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (call) async => tempRoot.path,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => tempRoot.path,
+        );
     SharedPreferences.setMockInitialValues({});
     await VaultService.logout();
   });
@@ -64,7 +64,10 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getString('main_vault_password')!;
       expect(stored, startsWith(r'pbkdf2$'));
-      expect(stored, isNot(sha256.convert(utf8.encode('main-pass')).toString()));
+      expect(
+        stored,
+        isNot(sha256.convert(utf8.encode('main-pass')).toString()),
+      );
     });
 
     test('legacy SHA-256 hashes still unlock and are upgraded', () async {
@@ -142,10 +145,10 @@ void main() {
     test('reset sets the chosen main password and keeps the decoy', () async {
       await setUpWithQuestions();
       expect(
-        await VaultService.resetPasswordWithSecurity(
-          'brand-new',
-          ['rex', 'new york'],
-        ),
+        await VaultService.resetPasswordWithSecurity('brand-new', [
+          'rex',
+          'new york',
+        ]),
         isTrue,
       );
       expect(await VaultService.authenticate('main-pass'), isFalse);
@@ -159,10 +162,10 @@ void main() {
     test('reset refuses a password equal to the decoy', () async {
       await setUpWithQuestions();
       expect(
-        await VaultService.resetPasswordWithSecurity(
-          'decoy-pass',
-          ['rex', 'new york'],
-        ),
+        await VaultService.resetPasswordWithSecurity('decoy-pass', [
+          'rex',
+          'new york',
+        ]),
         isFalse,
       );
     });

@@ -153,9 +153,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     setState(() => _doubleTapSeekSeconds = seconds);
                   },
                   onChangeEnd: (value) {
-                    SettingsService.setDoubleTapSeekSeconds(
-                      value.round(),
-                    );
+                    SettingsService.setDoubleTapSeekSeconds(value.round());
                   },
                 ),
                 _buildSliderSetting(
@@ -458,9 +456,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Text(
             description,
             style: TextStyle(
-              color: theme.textTheme.bodyMedium?.color?.withValues(
-                alpha: 0.7,
-              ),
+              color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
               fontSize: 13,
             ),
           ),

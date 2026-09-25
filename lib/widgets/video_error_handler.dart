@@ -112,10 +112,7 @@ class _VideoPlayerErrorHandlerState
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Colors.black,
-            Colors.grey[900]!,
-          ],
+          colors: [Colors.black, Colors.grey[900]!],
         ),
       ),
       child: Center(
