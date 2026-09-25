@@ -72,6 +72,10 @@ enum AspectRatioMode {
   const AspectRatioMode(this.label);
 }
 
+/// Marker for "argument not passed" so [VideoPlayerState.copyWith] can tell
+/// an omitted nullable field apart from an explicit `null` that clears it.
+const Object _unset = Object();
+
 // Video player state model
 class VideoPlayerState {
   final Player? player;
@@ -159,8 +163,8 @@ class VideoPlayerState {
   });
 
   VideoPlayerState copyWith({
-    Player? player,
-    VideoController? videoController,
+    Object? player = _unset,
+    Object? videoController = _unset,
     bool? isInitialized,
     bool? isPlaying,
     Duration? position,
@@ -168,18 +172,18 @@ class VideoPlayerState {
     Duration? bufferDuration,
     double? volume,
     bool? isLocked,
-    String? subtitlePath,
+    Object? subtitlePath = _unset,
     List<SubtitleEntry>? subtitles,
     bool? showControls,
     bool? isFullscreen,
     int? audioTrackIndex,
     bool? hasError,
-    String? errorMessage,
+    Object? errorMessage = _unset,
     double? playbackSpeed,
     double? aspectRatio,
     AspectRatioMode? aspectRatioMode,
-    String? videoPath,
-    String? videoUrl,
+    Object? videoPath = _unset,
+    Object? videoUrl = _unset,
     bool? isLoaded,
     PlayerOrientation? orientation,
     bool? isInPip,
@@ -188,21 +192,23 @@ class VideoPlayerState {
     double? volumeBoost,
     MediaType? type,
     List<VideoFile>? currentFolderVideos,
-    String? currentFolderName,
+    Object? currentFolderName = _unset,
     List<double>? equalizerBands,
     bool? isEqualizerEnabled,
     List<AudioTrackInfo>? audioTracks,
     bool? isSwitchingDecoder,
     bool? isResolvingStream,
-    String? resolvingMessage,
+    Object? resolvingMessage = _unset,
     double? resolvingProgress,
     List<YoutubeStreamQuality>? youtubeQualities,
-    YoutubeStreamQuality? selectedYoutubeQuality,
-    String? youtubeVideoId,
+    Object? selectedYoutubeQuality = _unset,
+    Object? youtubeVideoId = _unset,
   }) {
     return VideoPlayerState(
-      player: player ?? this.player,
-      videoController: videoController ?? this.videoController,
+      player: identical(player, _unset) ? this.player : player as Player?,
+      videoController: identical(videoController, _unset)
+          ? this.videoController
+          : videoController as VideoController?,
       isInitialized: isInitialized ?? this.isInitialized,
       isPlaying: isPlaying ?? this.isPlaying,
       position: position ?? this.position,
@@ -210,18 +216,26 @@ class VideoPlayerState {
       bufferDuration: bufferDuration ?? this.bufferDuration,
       volume: volume ?? this.volume,
       isLocked: isLocked ?? this.isLocked,
-      subtitlePath: subtitlePath ?? this.subtitlePath,
+      subtitlePath: identical(subtitlePath, _unset)
+          ? this.subtitlePath
+          : subtitlePath as String?,
       subtitles: subtitles ?? this.subtitles,
       showControls: showControls ?? this.showControls,
       isFullscreen: isFullscreen ?? this.isFullscreen,
       audioTrackIndex: audioTrackIndex ?? this.audioTrackIndex,
       hasError: hasError ?? this.hasError,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       aspectRatio: aspectRatio ?? this.aspectRatio,
       aspectRatioMode: aspectRatioMode ?? this.aspectRatioMode,
-      videoPath: videoPath ?? this.videoPath,
-      videoUrl: videoUrl ?? this.videoUrl,
+      videoPath: identical(videoPath, _unset)
+          ? this.videoPath
+          : videoPath as String?,
+      videoUrl: identical(videoUrl, _unset)
+          ? this.videoUrl
+          : videoUrl as String?,
       isLoaded: isLoaded ?? this.isLoaded,
       orientation: orientation ?? this.orientation,
       isInPip: isInPip ?? this.isInPip,
@@ -230,25 +244,32 @@ class VideoPlayerState {
       volumeBoost: volumeBoost ?? this.volumeBoost,
       type: type ?? this.type,
       currentFolderVideos: currentFolderVideos ?? this.currentFolderVideos,
-      currentFolderName: currentFolderName ?? this.currentFolderName,
+      currentFolderName: identical(currentFolderName, _unset)
+          ? this.currentFolderName
+          : currentFolderName as String?,
       equalizerBands: equalizerBands ?? this.equalizerBands,
       isEqualizerEnabled: isEqualizerEnabled ?? this.isEqualizerEnabled,
       audioTracks: audioTracks ?? this.audioTracks,
       isSwitchingDecoder: isSwitchingDecoder ?? this.isSwitchingDecoder,
       isResolvingStream: isResolvingStream ?? this.isResolvingStream,
-      resolvingMessage: resolvingMessage ?? this.resolvingMessage,
+      resolvingMessage: identical(resolvingMessage, _unset)
+          ? this.resolvingMessage
+          : resolvingMessage as String?,
       resolvingProgress: resolvingProgress ?? this.resolvingProgress,
       youtubeQualities: youtubeQualities ?? this.youtubeQualities,
-      selectedYoutubeQuality:
-          selectedYoutubeQuality ?? this.selectedYoutubeQuality,
-      youtubeVideoId: youtubeVideoId ?? this.youtubeVideoId,
+      selectedYoutubeQuality: identical(selectedYoutubeQuality, _unset)
+          ? this.selectedYoutubeQuality
+          : selectedYoutubeQuality as YoutubeStreamQuality?,
+      youtubeVideoId: identical(youtubeVideoId, _unset)
+          ? this.youtubeVideoId
+          : youtubeVideoId as String?,
     );
   }
 }
 
 class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
   final Floating _floating = Floating();
-  final List<StreamSubscription> _subscriptions = [];
+  final List<StreamSubscription<Object?>> _subscriptions = [];
   Timer? _positionThrottleTimer;
   Timer? _audioTrackPoller;
   Timer? _statePoller;
@@ -257,19 +278,22 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
   DateTime? _lastPositionUpdateTime;
   static const int _uiUpdateIntervalMs = 150;
   bool _isInitializing = false;
+  String? _inFlightSourceKey;
+  int _loadGeneration = 0;
+  Player? _loadingPlayer;
   String? _lastSourceKey;
   int _initRetryCount = 0;
 
-  VideoPlayerControllerNotifier() : super(const VideoPlayerState()) {
-    _initPipListener();
-  }
+  VideoPlayerControllerNotifier() : super(const VideoPlayerState());
 
-  void _initPipListener() {}
+  Player? get _currentPlayerOrNull => mounted ? state.player : null;
 
-  Future<void> _disposePlayer() async {
-    for (final s in _subscriptions) {
-      await s.cancel();
-    }
+  /// Tears down the active (and any half-loaded) player.
+  ///
+  /// Everything that touches [state] happens synchronously before the first
+  /// `await`, so this is safe to call from [dispose].
+  Future<void> _disposePlayer({bool updateState = true}) async {
+    final subscriptions = List.of(_subscriptions);
     _subscriptions.clear();
     _positionThrottleTimer?.cancel();
     _positionThrottleTimer = null;
@@ -282,11 +306,22 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
     _resolveProgressTimer?.cancel();
     _resolveProgressTimer = null;
 
-    if (state.player != null) {
-      await state.player!.dispose();
+    final player = _currentPlayerOrNull;
+    final loading = _loadingPlayer;
+    _loadingPlayer = null;
+    if (updateState && mounted && player != null) {
+      state = state.copyWith(player: null, videoController: null);
     }
 
-    SystemControlsService.abandonAudioFocus();
+    for (final s in subscriptions) {
+      await s.cancel();
+    }
+    if (player != null) await player.dispose();
+    if (loading != null && !identical(loading, player)) {
+      await loading.dispose();
+    }
+
+    unawaited(SystemControlsService.abandonAudioFocus());
 
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -313,9 +348,11 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
     if (state.player?.platform is NativePlayer) {
       final nativePlayer = state.player!.platform as NativePlayer;
       nativePlayer.setProperty('framedrop', frameDrop ? 'vo' : 'no');
-      nativePlayer.setProperty(
-        'vd-lavc-skiploopfilter',
-        skipLoopFilter ? 'all' : 'no',
+      unawaited(
+        nativePlayer.setProperty(
+          'vd-lavc-skiploopfilter',
+          skipLoopFilter ? 'all' : 'no',
+        ),
       );
     }
   }
@@ -339,14 +376,13 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
   void _startResolveProgress() {
     _resolveProgressTimer?.cancel();
     state = state.copyWith(resolvingProgress: 0.01);
-    _resolveProgressTimer = Timer.periodic(
-      const Duration(milliseconds: 180),
-      (_) {
-        final next = (state.resolvingProgress + 0.03).clamp(0.01, 0.95);
-        if (next == state.resolvingProgress) return;
-        state = state.copyWith(resolvingProgress: next);
-      },
-    );
+    _resolveProgressTimer = Timer.periodic(const Duration(milliseconds: 180), (
+      _,
+    ) {
+      final next = (state.resolvingProgress + 0.03).clamp(0.01, 0.95);
+      if (next == state.resolvingProgress) return;
+      state = state.copyWith(resolvingProgress: next);
+    });
   }
 
   void _stopResolveProgress({bool complete = false}) {
@@ -363,16 +399,28 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
     bool autoPlay = false,
     Duration? startPosition,
   }) async {
-    if (_isInitializing) return;
+    final sourceKey = (videoUrl != null && videoUrl.isNotEmpty)
+        ? 'url:$videoUrl'
+        : 'path:$videoPath';
+    // A duplicate request for the source already loading is a no-op; any
+    // other request supersedes the in-flight load.
+    if (_isInitializing && _inFlightSourceKey == sourceKey) return;
+    final generation = ++_loadGeneration;
+    bool isStale() => generation != _loadGeneration || !mounted;
+
     _isInitializing = true;
-    final sourceKey =
-        (videoUrl != null && videoUrl.isNotEmpty) ? 'url:$videoUrl' : 'path:$videoPath';
+    _inFlightSourceKey = sourceKey;
     if (_lastSourceKey != sourceKey) {
       _lastSourceKey = sourceKey;
       _initRetryCount = 0;
     }
+    // Remember the quality chosen for the previous stream before the state
+    // for the new source is reset below.
+    final previousYoutubeHeight = state.selectedYoutubeQuality?.height;
+    Player? player;
     try {
       await _disposePlayer();
+      if (isStale()) return;
 
       state = state.copyWith(
         isInitialized: false,
@@ -402,10 +450,11 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
       }
 
       if (videoPath != null) {
-        PlaybackHistoryService.saveLastPlayedVideo(videoPath);
+        unawaited(PlaybackHistoryService.saveLastPlayedVideo(videoPath));
       }
 
-      final player = Player();
+      player = Player();
+      _loadingPlayer = player;
 
       try {
         if (player.platform is NativePlayer) {
@@ -429,20 +478,22 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
           // Common Optimizations
 
           if (PerformanceService.shouldEnableInterpolation()) {
-            nativePlayer.setProperty('interpolation', 'yes');
-            nativePlayer.setProperty('tscale', 'oversample');
+            unawaited(nativePlayer.setProperty('interpolation', 'yes'));
+            unawaited(nativePlayer.setProperty('tscale', 'oversample'));
           } else {
-            nativePlayer.setProperty('interpolation', 'no');
+            unawaited(nativePlayer.setProperty('interpolation', 'no'));
             // Use bilinear scaling which is faster
-            nativePlayer.setProperty('tscale', 'bilinear');
+            unawaited(nativePlayer.setProperty('tscale', 'bilinear'));
           }
 
-          nativePlayer.setProperty('cache', 'yes');
-          nativePlayer.setProperty(
-            'demuxer-max-bytes',
-            PerformanceService.getOptimalDemuxerCache(),
+          unawaited(nativePlayer.setProperty('cache', 'yes'));
+          unawaited(
+            nativePlayer.setProperty(
+              'demuxer-max-bytes',
+              PerformanceService.getOptimalDemuxerCache(),
+            ),
           );
-          nativePlayer.setProperty('demuxer-max-back-bytes', '16M');
+          unawaited(nativePlayer.setProperty('demuxer-max-back-bytes', '16M'));
 
           applyHdrToneMapping(PerformanceService.isHdrToneMappingEnabled);
         }
@@ -525,17 +576,15 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
       );
 
       _subscriptions.add(
-        player.stream.playing.listen(
-          (isPlaying) {
-            state = state.copyWith(isPlaying: isPlaying);
-            if (!isPlaying && state.videoPath != null) {
-              PlaybackHistoryService.savePosition(
-                state.videoPath!,
-                state.position,
-              );
-            }
-          },
-        ),
+        player.stream.playing.listen((isPlaying) {
+          state = state.copyWith(isPlaying: isPlaying);
+          if (!isPlaying && state.videoPath != null) {
+            PlaybackHistoryService.savePosition(
+              state.videoPath!,
+              state.position,
+            );
+          }
+        }),
       );
 
       double? lastVolume;
@@ -556,10 +605,20 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
             debugPrint(
               'Hardware decoding failed, switching to Software decoding...',
             );
-            // Disable HW decoding
+            final resumeAt = state.position;
+            final resume = state.isPlaying;
+            // Disable HW decoding and reload the same source.
             state = state.copyWith(useHwDec: false);
-            // Retry initialization
-            initializeVideo(state.videoUrl, state.videoPath);
+            _isInitializing = false;
+            _inFlightSourceKey = null;
+            unawaited(
+              initializeVideo(
+                state.videoUrl,
+                state.videoPath,
+                autoPlay: resume,
+                startPosition: resumeAt > Duration.zero ? resumeAt : null,
+              ),
+            );
             return;
           }
 
@@ -583,13 +642,12 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
           );
           _startResolveProgress();
 
-          final preferredHeight = state.selectedYoutubeQuality?.height;
-          final result = await YoutubeStreamService
-              .resolvePlayableUrlWithQualities(
+          final preferredHeight = previousYoutubeHeight;
+          final result =
+              await YoutubeStreamService.resolvePlayableUrlWithQualities(
                 videoUrl,
                 preferredHeight: preferredHeight,
-              )
-              .timeout(
+              ).timeout(
                 const Duration(seconds: 20),
                 onTimeout: () {
                   throw const YoutubeStreamException(
@@ -597,6 +655,7 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
                   );
                 },
               );
+          if (isStale()) return;
 
           state = state.copyWith(
             isResolvingStream: false,
@@ -613,6 +672,7 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
           final resolvedUrl = await YoutubeStreamService.resolveIfNeeded(
             videoUrl,
           );
+          if (isStale()) return;
           media = Media(resolvedUrl);
         }
       } else if (videoPath != null && videoPath.isNotEmpty) {
@@ -621,12 +681,15 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
 
       if (media == null) throw Exception('No valid media source');
 
-      await player.open(media, play: false).timeout(
-        const Duration(seconds: 12),
-        onTimeout: () {
-          throw Exception('Connection timed out. Please try again.');
-        },
-      );
+      await player
+          .open(media, play: false)
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw Exception('Connection timed out. Please try again.');
+            },
+          );
+      if (isStale()) return;
 
       if (state.selectedYoutubeQuality?.audioUrl != null) {
         await player.setAudioTrack(
@@ -636,6 +699,9 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
         await player.setAudioTrack(AudioTrack.auto());
       }
 
+      if (isStale()) return;
+
+      _loadingPlayer = null;
       state = state.copyWith(
         player: player,
         videoController: videoController,
@@ -655,6 +721,7 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
         await player.play();
       }
     } on YoutubeStreamException catch (e) {
+      if (isStale()) return;
       debugPrint('YouTube stream error: $e');
       await _disposePlayer();
       state = state.copyWith(
@@ -668,11 +735,17 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
       );
       _stopResolveProgress();
     } catch (e, stackTrace) {
+      if (isStale()) return;
       if (e.toString().contains('Connection timed out') &&
           _initRetryCount < 1) {
         _initRetryCount += 1;
         _isInitializing = false;
-        await initializeVideo(videoUrl, videoPath, autoPlay: autoPlay);
+        await initializeVideo(
+          videoUrl,
+          videoPath,
+          autoPlay: autoPlay,
+          startPosition: startPosition,
+        );
         return;
       }
       debugPrint('Error initializing video: $e');
@@ -689,28 +762,45 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
       );
       _stopResolveProgress();
     } finally {
-      _isInitializing = false;
+      // A player that never made it into state (superseded or failed) would
+      // otherwise keep its native decoder and surfaces alive.
+      if (player != null &&
+          identical(_loadingPlayer, player) &&
+          !identical(player, _currentPlayerOrNull)) {
+        _loadingPlayer = null;
+        unawaited(player.dispose());
+      }
+      if (generation == _loadGeneration) {
+        _isInitializing = false;
+        _inFlightSourceKey = null;
+      }
     }
   }
 
+  /// Safety net for platforms where media_kit streams occasionally stall:
+  /// reconciles position, duration and play state from the player snapshot.
   void _startStatePolling(Player player) {
     _statePoller?.cancel();
     _statePoller = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
       final current = player.state;
-      final wasPlaying = state.isPlaying;
-      if (current.position != state.position) {
-        state = state.copyWith(position: current.position);
-      }
-      if (current.duration != state.duration) {
-        state = state.copyWith(duration: current.duration);
-      }
-      if (current.playing != wasPlaying) {
+      final playingChanged = current.playing != state.isPlaying;
+      if (playingChanged) {
         if (current.playing) {
           SystemControlsService.requestAudioFocus();
         } else {
           SystemControlsService.abandonAudioFocus();
         }
-        state = state.copyWith(isPlaying: current.playing);
+      }
+      // One notification per tick rather than one per field.
+      if (playingChanged ||
+          current.position != state.position ||
+          current.duration != state.duration) {
+        state = state.copyWith(
+          position: current.position,
+          duration: current.duration,
+          isPlaying: current.playing,
+        );
       }
     });
   }
@@ -744,12 +834,14 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
           quality.height,
         );
       }
-      await player.open(Media(quality.url), play: false).timeout(
-        const Duration(seconds: 12),
-        onTimeout: () {
-          throw Exception('Connection timed out. Please try again.');
-        },
-      );
+      await player
+          .open(Media(quality.url), play: false)
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw Exception('Connection timed out. Please try again.');
+            },
+          );
 
       if (quality.audioUrl != null) {
         await player.setAudioTrack(AudioTrack.uri(quality.audioUrl!));
@@ -778,6 +870,7 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
       _stopResolveProgress();
     }
   }
+
   Future<void> seekTo(Duration position) async {
     Duration safePosition = position;
     if (safePosition.isNegative) {
@@ -836,7 +929,7 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
     for (int i = 0; i < tracks.length; i++) {
       final track = tracks[i];
       String? codecInfo = track.codec;
-      String? titleInfo = track.title;
+      final String? titleInfo = track.title;
 
       if (codecInfo == null || codecInfo.isEmpty) {
         if (track.channels != null) {
@@ -905,11 +998,13 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
       state = state.copyWith(showControls: visible);
     }
   }
+
   void setInPip(bool value) {
     if (state.isInPip != value) {
       state = state.copyWith(isInPip: value);
     }
   }
+
   void toggleLock() => state = state.copyWith(isLocked: !state.isLocked);
   void toggleFullscreen() =>
       state = state.copyWith(isFullscreen: !state.isFullscreen);
@@ -1041,7 +1136,7 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
     }
   }
 
-  void toggleDecoder() async {
+  Future<void> toggleDecoder() async {
     if (state.videoPath == null && state.videoUrl == null) return;
     final currentPosition = state.position;
     final wasPlaying = state.isPlaying;
@@ -1052,11 +1147,7 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
       isSwitchingDecoder: true,
     );
     try {
-      await initializeVideo(
-        state.videoUrl,
-        state.videoPath,
-        autoPlay: false,
-      );
+      await initializeVideo(state.videoUrl, state.videoPath, autoPlay: false);
     } finally {
       state = state.copyWith(isSwitchingDecoder: false);
     }
@@ -1124,7 +1215,9 @@ class VideoPlayerControllerNotifier extends StateNotifier<VideoPlayerState> {
 
   @override
   void dispose() {
-    _disposePlayer();
+    // Abort any in-flight load, then release native resources.
+    _loadGeneration++;
+    unawaited(_disposePlayer(updateState: false));
     super.dispose();
   }
 }

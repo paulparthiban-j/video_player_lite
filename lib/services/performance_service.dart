@@ -6,6 +6,8 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/ui/responsive.dart';
+
 class PerformanceService {
   static bool _isLowEndDevice = false;
   static bool _isInitialized = false;
@@ -43,12 +45,15 @@ class PerformanceService {
         final manufacturer = androidInfo.manufacturer.toLowerCase();
 
         // Detect MediaTek devices
-        _isMediaTek = hardware.contains('mt') || 
-                      hardware.contains('helio') || 
-                      brand.contains('vivo') || // Many Vivo phones are MTK
-                      manufacturer.contains('vivo');
+        _isMediaTek =
+            hardware.contains('mt') ||
+            hardware.contains('helio') ||
+            brand.contains('vivo') || // Many Vivo phones are MTK
+            manufacturer.contains('vivo');
 
-        debugPrint('Device Hardware: $hardware, Brand: $brand, IsMediaTek: $_isMediaTek');
+        debugPrint(
+          'Device Hardware: $hardware, Brand: $brand, IsMediaTek: $_isMediaTek',
+        );
 
         // Consider devices with Android < 8 or MediaTek P35/G35 class as low-end
         _isLowEndDevice = sdkInt < 26 || _isMediaTek;
@@ -122,10 +127,7 @@ class PerformanceService {
 
   static bool get isAutoPerformanceEnabled => _autoPerformanceMode ?? false;
 
-  static void setDynamicPerformance({
-    bool? frameDrop,
-    bool? skipLoopFilter,
-  }) {
+  static void setDynamicPerformance({bool? frameDrop, bool? skipLoopFilter}) {
     if (frameDrop != null) _dynamicFrameDrop = frameDrop;
     if (skipLoopFilter != null) _dynamicSkipLoopFilter = skipLoopFilter;
   }
@@ -135,7 +137,8 @@ class PerformanceService {
     _dynamicSkipLoopFilter = null;
   }
 
-  static bool get isHardwareDecodingEnabled => _forcedHwDec ?? true; // Default true
+  static bool get isHardwareDecodingEnabled =>
+      _forcedHwDec ?? true; // Default true
   static bool get isFrameDropEnabled {
     if (_forcedFrameDrop != null) return _forcedFrameDrop!;
     if (isAutoPerformanceEnabled && _dynamicFrameDrop != null) {
@@ -176,11 +179,7 @@ class PerformanceService {
 
   static Future<void> resetPerformanceSettings() async {
     try {
-      // Reset to default orientations
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
+      await AppOrientation.applyBrowsing();
 
       // Show system UI again
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -293,7 +292,7 @@ class PerformanceService {
   static String getSkipLoopFilter() {
     if (_forcedSkipLoopFilter == true) return 'all';
     if (_forcedSkipLoopFilter == false) return 'no';
-    
+
     if (_isLowEndDevice) {
       return 'all'; // Skip ALL deblocking (fastest, slight visual blocking)
     }
@@ -301,7 +300,7 @@ class PerformanceService {
   }
 
   static int getOptimalThreads() {
-    // MediaTek P35 is Octa-core. 
+    // MediaTek P35 is Octa-core.
     // Using too many threads can cause context switching overhead.
     // 4 is a safe sweet spot for mobile SW decoding.
     if (_isLowEndDevice) {
@@ -330,12 +329,14 @@ class PerformanceService {
       'hwdec': platformHardwareDecoder,
       'vd-lavc-threads': '0', // HW decoders usually manage their own threads
       'vd-lavc-skiploopfilter': getSkipLoopFilter(),
-      'framedrop': isFrameDropEnabled ? 'vo' : 'no', // Drop at video output if enabled
+      'framedrop': isFrameDropEnabled
+          ? 'vo'
+          : 'no', // Drop at video output if enabled
       'video-sync': 'audio',
       'opengl-glfinish': 'no',
     };
   }
-  
+
   static String get platformHardwareDecoder {
     if (_forcedHwDec == false) return 'no';
     // Use 'mediacodec' (Zero-Copy) for best performance on Android

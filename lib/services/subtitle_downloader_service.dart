@@ -254,7 +254,7 @@ class SubtitleDownloaderService {
     String? outputDirectory,
     Function(double)? onProgress,
   }) async {
-    return await downloadSubtitle(
+    return downloadSubtitle(
       subtitleId: subtitle.id,
       fileName: subtitle.fileName,
       outputDirectory: outputDirectory,
@@ -517,7 +517,7 @@ class SubtitleDownloaderService {
   }
 
   static Future<void> dispose() async {
-    _progressController?.close();
+    unawaited(_progressController?.close());
     _progressController = null;
   }
 }

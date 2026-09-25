@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext traffic for local development and streaming -->
+    <!--
+      Cleartext is permitted because users can open arbitrary http:// streams
+      (IPTV, LAN media servers). Only system CAs are trusted in release builds
+      so a user-installed certificate cannot be used to intercept traffic.
+    -->
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
-            <!-- Trust system certificates -->
             <certificates src="system" />
-            <!-- Trust user-added certificates (for debugging) -->
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
-    
-    <!-- Domain-specific configurations for streaming services -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">192.168.0.0</domain>
-        <domain includeSubdomains="true">10.0.0.0</domain>
-    </domain-config>
+
+    <!-- Debug builds additionally trust user CAs for proxy-based debugging. -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>

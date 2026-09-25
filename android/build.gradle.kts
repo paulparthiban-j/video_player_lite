@@ -14,51 +14,24 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
-
+}
+subprojects {
+    // Unmaintained plugins (e.g. video_thumbnail) still compile against
+    // API 33, but their AndroidX dependencies require 34+. Raising the
+    // compile SDK only affects which API headers are compiled against; it
+    // doesn't change minSdk or targetSdk.
     plugins.withId("com.android.library") {
-        extensions.configure<com.android.build.gradle.LibraryExtension> {
-            compileOptions {
-                sourceCompatibility = JavaVersion.VERSION_17
-                targetCompatibility = JavaVersion.VERSION_17
+        extensions.configure<com.android.build.api.variant.LibraryAndroidComponentsExtension> {
+            finalizeDsl { android ->
+                if ((android.compileSdk ?: 0) < 36) {
+                    android.compileSdk = 36
+                }
             }
         }
     }
-
-    plugins.withId("com.android.application") {
-        extensions.configure<com.android.build.gradle.AppExtension> {
-            compileOptions {
-                sourceCompatibility = JavaVersion.VERSION_17
-                targetCompatibility = JavaVersion.VERSION_17
-            }
-        }
-    }
-
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        kotlinOptions {
-            jvmTarget = JavaVersion.VERSION_17.toString()
-        }
-    }
-
-    tasks.withType<JavaCompile>().configureEach {
-        sourceCompatibility = JavaVersion.VERSION_17.toString()
-        targetCompatibility = JavaVersion.VERSION_17.toString()
-    }
-
-    plugins.withId("org.jetbrains.kotlin.android") {
-        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension> {
-            jvmToolchain(17)
-        }
-    }
-
-    afterEvaluate {
-        val androidExt = extensions.findByName("android")
-        if (androidExt is com.android.build.gradle.BaseExtension) {
-            androidExt.compileOptions.apply {
-                sourceCompatibility = JavaVersion.VERSION_17
-                targetCompatibility = JavaVersion.VERSION_17
-            }
-        }
-    }
+}
+subprojects {
+    project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {

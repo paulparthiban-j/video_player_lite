@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
+import '../core/ui/responsive.dart';
+import '../services/vault_auto_lock.dart';
 import '../services/vault_service.dart';
 import '../widgets/parthi_play_video_player.dart';
 
@@ -19,6 +22,12 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
   List<VaultVideo> _vaultVideos = [];
   bool _isLoading = true;
   bool _isSelectionMode = false;
+
+  // Background encryption of videos hidden by older versions.
+  bool _isEncrypting = false;
+  int _encryptDone = 0;
+  int _encryptTotal = 0;
+  double _encryptFileProgress = 0;
   final Set<String> _selectedVideos = {};
 
   late AnimationController _fabController;
@@ -50,15 +59,55 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
           CurvedAnimation(parent: _listController, curve: Curves.easeOutCubic),
         );
 
+    VaultAutoLock.vaultScreenOpened();
     VaultService.cleanupPlaybackTempFiles();
     _loadVaultVideos();
   }
 
   @override
   void dispose() {
+    // Leaving the vault locks it and lifts the screenshot block.
+    VaultAutoLock.vaultScreenClosed();
     _fabController.dispose();
     _listController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showAutoLockDialog() async {
+    final current = await VaultAutoLock.getTimeout();
+    if (!mounted) return;
+    final selected = await showDialog<Duration>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Lock vault when app is in background'),
+        children: [
+          for (final option in VaultAutoLock.options)
+            ListTile(
+              title: Text(VaultAutoLock.describe(option)),
+              trailing: option == current
+                  ? Icon(
+                      Icons.check,
+                      color: Theme.of(dialogContext).colorScheme.primary,
+                    )
+                  : null,
+              onTap: () => Navigator.of(dialogContext).pop(option),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+            child: Text(
+              'The vault also locks whenever you leave this screen.',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    await VaultAutoLock.setTimeout(selected);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Auto-lock: ${VaultAutoLock.describe(selected)}')),
+    );
   }
 
   Future<void> _loadVaultVideos() async {
@@ -75,6 +124,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
       _listController.forward();
       _fabController.forward();
+      unawaited(_encryptLegacyVideos());
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -91,6 +141,79 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     }
   }
 
+  Future<void> _encryptLegacyVideos() async {
+    if (_isEncrypting) return;
+    final pending = await VaultService.countUnencryptedVideos();
+    if (pending == 0 || !mounted) return;
+
+    setState(() {
+      _isEncrypting = true;
+      _encryptDone = 0;
+      _encryptTotal = pending;
+      _encryptFileProgress = 0;
+    });
+    try {
+      await VaultService.encryptPendingVideos(
+        onProgress: (done, total, fileProgress) {
+          if (!mounted) return;
+          setState(() {
+            _encryptDone = done;
+            _encryptTotal = total;
+            _encryptFileProgress = fileProgress;
+          });
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _isEncrypting = false);
+    }
+    if (!mounted) return;
+    final videos = await VaultService.getVaultVideos();
+    if (mounted) setState(() => _vaultVideos = videos);
+  }
+
+  Widget _buildEncryptionBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final overall = _encryptTotal == 0
+        ? null
+        : ((_encryptDone + _encryptFileProgress) / _encryptTotal).clamp(
+            0.0,
+            1.0,
+          );
+    return Material(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.enhanced_encryption,
+                  size: 20,
+                  color: scheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Encrypting existing videos '
+                    '(${_encryptDone.clamp(0, _encryptTotal)}/$_encryptTotal)…',
+                    style: TextStyle(color: scheme.onSecondaryContainer),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: overall),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _toggleSelection(String videoId) {
     setState(() {
       if (_selectedVideos.contains(videoId)) {
@@ -104,7 +227,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       }
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
   }
 
   void _clearSelection() {
@@ -113,7 +236,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       _isSelectionMode = false;
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
   }
 
   Future<void> _removeSelectedVideos() async {
@@ -151,7 +274,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     }
 
     _clearSelection();
-    _loadVaultVideos();
+    unawaited(_loadVaultVideos());
   }
 
   Future<void> _shareSelectedVideos() async {
@@ -164,7 +287,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
     if (!confirmed) return;
 
-    List<String> exportedPaths = [];
+    final List<String> exportedPaths = [];
     try {
       int successCount = 0;
 
@@ -186,11 +309,11 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
       if (mounted && exportedPaths.isNotEmpty) {
         // Share the exported files
-        await Share.shareXFiles(
-          exportedPaths.map((path) => XFile(path)).toList(),
-          subject: 'Shared Videos from Parthi Play',
-          text:
-              'Check out these ${exportedPaths.length} video(s) from my private vault!',
+        // No caption: the share must not reveal that a vault exists.
+        await VaultAutoLock.runWhileSuspended(
+          () => Share.shareXFiles(
+            exportedPaths.map((path) => XFile(path)).toList(),
+          ),
         );
 
         if (mounted) {
@@ -263,7 +386,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     }
 
     _clearSelection();
-    _loadVaultVideos();
+    unawaited(_loadVaultVideos());
   }
 
   Future<bool> _showConfirmDialog(String title, String message) async {
@@ -337,6 +460,9 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
             icon: Icon(Icons.more_vert, color: onSurfaceVariant),
             onSelected: (value) async {
               switch (value) {
+                case 'auto_lock':
+                  await _showAutoLockDialog();
+                  break;
                 case 'logout':
                   final navigator = Navigator.of(context);
                   await VaultService.logout();
@@ -351,7 +477,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
                   );
                   if (confirmed) {
                     await VaultService.clearVault();
-                    _loadVaultVideos();
+                    unawaited(_loadVaultVideos());
                   }
                   break;
                 case 'verify_integrity':
@@ -375,6 +501,16 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'auto_lock',
+                child: Row(
+                  children: [
+                    Icon(Icons.timer_outlined, color: Colors.grey),
+                    SizedBox(width: 8),
+                    Text('Auto-lock'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(
                 value: 'logout',
                 child: Row(
@@ -410,7 +546,12 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
         ],
       ),
 
-      body: _buildBody(),
+      body: Column(
+        children: [
+          if (_isEncrypting) _buildEncryptionBanner(context),
+          Expanded(child: _buildBody()),
+        ],
+      ),
 
       floatingActionButton: _buildFloatingActions(),
     );
@@ -455,180 +596,205 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       child: RefreshIndicator(
         onRefresh: _loadVaultVideos,
         color: Colors.red.shade700,
-        child: ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: _vaultVideos.length,
-          itemBuilder: (context, index) {
-            final isDark = Theme.of(context).brightness == Brightness.dark;
-            final video = _vaultVideos[index];
-            final isSelected = _selectedVideos.contains(video.id);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.grey.shade900.withValues(alpha: 0.3)
-                    : Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isSelected
-                      ? Colors.red.shade600
-                      : (isDark
-                            ? Colors.grey.shade700.withValues(alpha: 0.5)
-                            : Colors.grey[300]!),
-                  width: isSelected ? 2 : 1,
-                ),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              // Bottom padding clears the action buttons and gesture bar.
+              padding: EdgeInsets.fromLTRB(
+                context.pagePadding,
+                16,
+                context.pagePadding,
+                96 + MediaQuery.paddingOf(context).bottom,
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.grey.shade800 : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.lock,
-                    color: isDark ? Colors.grey : Colors.grey[700],
-                    size: 30,
-                  ),
-                ),
-                title: Text(
-                  video.fileName,
-                  style: TextStyle(
-                    color: onSurface,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatFileSize(video.fileSize),
-                      style: TextStyle(color: onSurfaceVariant, fontSize: 12),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Protected: ${_formatDate(video.hiddenDate)}',
-                      style: TextStyle(color: onSurfaceVariant, fontSize: 12),
-                    ),
-                  ],
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isSelectionMode)
-                      Checkbox(
-                        value: isSelected,
-                        onChanged: (_) => _toggleSelection(video.id),
-                        activeColor: Colors.red.shade700,
-                        checkColor: Colors.white,
-                      )
-                    else ...[
-                      IconButton(
-                        onPressed: () => _playVideo(video),
-                        icon: Icon(Icons.play_arrow, color: onSurface),
+              sliver: SliverAdaptiveList(
+                itemCount: _vaultVideos.length,
+                itemBuilder: (context, index) {
+                  final isDark =
+                      Theme.of(context).brightness == Brightness.dark;
+                  final video = _vaultVideos[index];
+                  final isSelected = _selectedVideos.contains(video.id);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.grey.shade900.withValues(alpha: 0.3)
+                          : Colors.grey[100],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? Colors.red.shade600
+                            : (isDark
+                                  ? Colors.grey.shade700.withValues(alpha: 0.5)
+                                  : Colors.grey[300]!),
+                        width: isSelected ? 2 : 1,
                       ),
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: onSurfaceVariant),
-                        onSelected: (value) async {
-                          switch (value) {
-                            case 'unhide':
-                              final scaffoldMessenger = ScaffoldMessenger.of(
-                                context,
-                              );
-                              final success = await _unhideWithProgress(
-                                video.id,
-                                title: 'Restoring ${video.fileName}',
-                              );
-                              if (success && mounted) {
-                                scaffoldMessenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Video removed from vault: ${video.fileName}',
-                                    ),
-                                    backgroundColor: Colors.green.shade700,
-                                  ),
-                                );
-                                _loadVaultVideos();
-                              }
-                              break;
-                            case 'delete':
-                              final scaffoldMessenger = ScaffoldMessenger.of(
-                                context,
-                              );
-                              final confirmed = await _showConfirmDialog(
-                                'Delete Video',
-                                'Are you sure you want to permanently delete ${video.fileName}?',
-                              );
-                              if (confirmed) {
-                                final success =
-                                    await VaultService.deleteFromVault(
-                                      video.id,
-                                    );
-                                if (success && mounted) {
-                                  scaffoldMessenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Video deleted: ${video.fileName}',
-                                      ),
-                                      backgroundColor: Colors.orange.shade700,
-                                    ),
-                                  );
-                                  _loadVaultVideos();
-                                }
-                              }
-                              break;
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'unhide',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.remove_circle_outline,
-                                  color: Colors.green,
-                                ),
-                                SizedBox(width: 8),
-                                Text('Remove from Vault'),
-                              ],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(16),
+                      leading: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.grey.shade800
+                              : Colors.grey[300],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.lock,
+                          color: isDark ? Colors.grey : Colors.grey[700],
+                          size: 30,
+                        ),
+                      ),
+                      title: Text(
+                        video.fileName,
+                        style: TextStyle(
+                          color: onSurface,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatFileSize(video.fileSize),
+                            style: TextStyle(
+                              color: onSurfaceVariant,
+                              fontSize: 12,
                             ),
                           ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete, color: Colors.red),
-                                SizedBox(width: 8),
-                                Text('Delete'),
-                              ],
+                          const SizedBox(height: 2),
+                          Text(
+                            'Protected: ${_formatDate(video.hiddenDate)}',
+                            style: TextStyle(
+                              color: onSurfaceVariant,
+                              fontSize: 12,
                             ),
                           ),
                         ],
                       ),
-                    ],
-                  ],
-                ),
-                onTap: () {
-                  if (_isSelectionMode) {
-                    _toggleSelection(video.id);
-                  } else {
-                    _playVideo(video);
-                  }
-                },
-                onLongPress: () {
-                  HapticFeedback.mediumImpact();
-                  _toggleSelection(video.id);
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_isSelectionMode)
+                            Checkbox(
+                              value: isSelected,
+                              onChanged: (_) => _toggleSelection(video.id),
+                              activeColor: Colors.red.shade700,
+                              checkColor: Colors.white,
+                            )
+                          else ...[
+                            IconButton(
+                              onPressed: () => _playVideo(video),
+                              icon: Icon(Icons.play_arrow, color: onSurface),
+                            ),
+                            PopupMenuButton<String>(
+                              icon: Icon(
+                                Icons.more_vert,
+                                color: onSurfaceVariant,
+                              ),
+                              onSelected: (value) async {
+                                switch (value) {
+                                  case 'unhide':
+                                    final scaffoldMessenger =
+                                        ScaffoldMessenger.of(context);
+                                    final success = await _unhideWithProgress(
+                                      video.id,
+                                      title: 'Restoring ${video.fileName}',
+                                    );
+                                    if (success && mounted) {
+                                      scaffoldMessenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Video removed from vault: ${video.fileName}',
+                                          ),
+                                          backgroundColor:
+                                              Colors.green.shade700,
+                                        ),
+                                      );
+                                      unawaited(_loadVaultVideos());
+                                    }
+                                    break;
+                                  case 'delete':
+                                    final scaffoldMessenger =
+                                        ScaffoldMessenger.of(context);
+                                    final confirmed = await _showConfirmDialog(
+                                      'Delete Video',
+                                      'Are you sure you want to permanently delete ${video.fileName}?',
+                                    );
+                                    if (confirmed) {
+                                      final success =
+                                          await VaultService.deleteFromVault(
+                                            video.id,
+                                          );
+                                      if (success && mounted) {
+                                        scaffoldMessenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Video deleted: ${video.fileName}',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orange.shade700,
+                                          ),
+                                        );
+                                        unawaited(_loadVaultVideos());
+                                      }
+                                    }
+                                    break;
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'unhide',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.remove_circle_outline,
+                                        color: Colors.green,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text('Remove from Vault'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Delete'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                      onTap: () {
+                        if (_isSelectionMode) {
+                          _toggleSelection(video.id);
+                        } else {
+                          _playVideo(video);
+                        }
+                      },
+                      onLongPress: () {
+                        unawaited(HapticFeedback.mediumImpact());
+                        _toggleSelection(video.id);
+                      },
+                    ),
+                  );
                 },
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
@@ -640,7 +806,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
         scale: _fabAnimation,
         child: FloatingActionButton(
           onPressed: () async {
-            HapticFeedback.lightImpact();
+            unawaited(HapticFeedback.lightImpact());
             await _pickAndHideVideo();
           },
           backgroundColor: Colors.red.shade700,
@@ -698,43 +864,49 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
 
   Future<void> _playVideo(VaultVideo video) async {
     final navigator = Navigator.of(context);
-    final handle = await VaultService.prepareDirectPlayback(video);
-    if (handle.renameFailed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    final VaultPlayback playback;
+    try {
+      playback = await VaultService.openForPlayback(video);
+    } catch (e) {
+      messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            handle.copyCreated
-                ? 'File was copied for playback. Will clean up after.'
-                : 'Unable to prepare file name for playback. Trying direct play.',
-          ),
-          backgroundColor: Colors.orange.shade700,
+          content: const Text('Unable to open this video'),
+          backgroundColor: Colors.red.shade700,
         ),
       );
+      return;
+    }
+    if (!mounted) {
+      unawaited(playback.release());
+      return;
     }
 
-    if (!mounted) return;
-    navigator.push(
-      MaterialPageRoute(
+    var released = false;
+    void finish() {
+      if (!released) {
+        released = true;
+        unawaited(playback.release());
+      }
+      if (navigator.canPop()) navigator.pop();
+    }
+
+    await navigator.push(
+      MaterialPageRoute<void>(
         builder: (context) => ParthiPlayVideoPlayer(
-          videoPath: handle.playPath,
+          videoUrl: playback.url?.toString(),
+          videoPath: playback.fileHandle?.playPath,
           autoPlay: true,
-          onVideoEnded: () {
-            VaultService.restoreDirectPlayback(handle);
-            if (!mounted) return;
-            if (navigator.canPop()) {
-              navigator.pop();
-            }
-          },
-          onBackPressed: () {
-            VaultService.restoreDirectPlayback(handle);
-            if (!mounted) return;
-            if (navigator.canPop()) {
-              navigator.pop();
-            }
-          },
+          onVideoEnded: finish,
+          onBackPressed: finish,
         ),
       ),
     );
+    // Covers system back gestures that bypass the player's callbacks.
+    if (!released) {
+      released = true;
+      unawaited(playback.release());
+    }
   }
 
   Future<bool> _unhideWithProgress(
@@ -748,49 +920,53 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     void Function(VoidCallback fn)? updateDialog;
 
     try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            updateDialog = setDialogState;
-            return AlertDialog(
-              content: SizedBox(
-                width: 320,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title),
-                    if (progressPrefix != null) ...[
-                      const SizedBox(height: 4),
+      unawaited(
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              updateDialog = setDialogState;
+              return AlertDialog(
+                content: SizedBox(
+                  width: 320,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title),
+                      if (progressPrefix != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          progressPrefix,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: progressValue.clamp(0.0, 1.0),
+                        backgroundColor: Colors.grey.shade300,
+                        color: Colors.green.shade700,
+                      ),
+                      const SizedBox(height: 8),
                       Text(
-                        progressPrefix,
+                        '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(
-                      value: progressValue.clamp(0.0, 1.0),
-                      backgroundColor: Colors.grey.shade300,
-                      color: Colors.green.shade700,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       );
       dialogShown = true;
@@ -854,12 +1030,14 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
     void Function(VoidCallback fn)? updateDialog;
 
     try {
-      HapticFeedback.mediumImpact();
+      unawaited(HapticFeedback.mediumImpact());
 
       // Pick video file
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: false,
+      final result = await VaultAutoLock.runWhileSuspended(
+        () => FilePicker.platform.pickFiles(
+          type: FileType.video,
+          allowMultiple: false,
+        ),
       );
 
       // Check mounted after async call
@@ -873,39 +1051,41 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       if (filePath == null) return;
 
       // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            updateDialog = setDialogState;
-            return AlertDialog(
-              content: SizedBox(
-                width: 320,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Securing video in vault...'),
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(
-                      value: progressValue.clamp(0.0, 1.0),
-                      backgroundColor: Colors.grey.shade300,
-                      color: Colors.red.shade700,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 12,
+      unawaited(
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              updateDialog = setDialogState;
+              return AlertDialog(
+                content: SizedBox(
+                  width: 320,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Securing video in vault...'),
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: progressValue.clamp(0.0, 1.0),
+                        backgroundColor: Colors.grey.shade300,
+                        color: Colors.red.shade700,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        '${(progressValue * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       );
       dialogShown = true;
@@ -925,7 +1105,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       if (!mounted) return;
 
       if (success) {
-        HapticFeedback.heavyImpact();
+        unawaited(HapticFeedback.heavyImpact());
         scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
@@ -937,9 +1117,9 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
           ),
         );
         // Refresh vault videos list
-        _loadVaultVideos();
+        unawaited(_loadVaultVideos());
       } else {
-        HapticFeedback.lightImpact();
+        unawaited(HapticFeedback.lightImpact());
         scaffoldMessenger.showSnackBar(
           SnackBar(
             content: const Text(
@@ -955,7 +1135,7 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       // Check mounted before showing error
       if (!mounted) return;
 
-      HapticFeedback.lightImpact();
+      unawaited(HapticFeedback.lightImpact());
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(

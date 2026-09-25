@@ -1,14 +1,29 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:convert/convert.dart';
-import 'package:crypto/crypto.dart';
-import 'package:encrypt/encrypt.dart' as encrypt;
+import 'dart:isolate';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../core/security/password_hasher.dart';
+import '../core/security/vault_crypto.dart';
 import 'thumbnail_service.dart';
+import 'vault_stream_server.dart';
 import 'video_scanner_service.dart';
+
+/// How a vault file is stored on disk.
+enum VaultFileFormat {
+  /// Moved into the vault without encryption (vaults from older versions).
+  /// Upgraded by [VaultService.encryptPendingVideos].
+  plain,
+
+  /// Chunked AES-256-GCM, see [VaultCrypto].
+  encrypted,
+}
 
 class VaultVideo {
   final String id;
@@ -18,12 +33,9 @@ class VaultVideo {
   final String originalExtension;
   final int fileSize;
   final DateTime hiddenDate;
-  final String thumbnail;
-  final String encryptionKey;
-  final String checksum;
-  final bool isEncrypted;
+  final VaultFileFormat format;
 
-  VaultVideo({
+  const VaultVideo({
     required this.id,
     required this.originalPath,
     required this.hiddenPath,
@@ -31,56 +43,108 @@ class VaultVideo {
     required this.originalExtension,
     required this.fileSize,
     required this.hiddenDate,
-    required this.thumbnail,
-    required this.encryptionKey,
-    required this.checksum,
-    this.isEncrypted = true,
+    required this.format,
   });
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'originalPath': originalPath,
-      'hiddenPath': hiddenPath,
-      'fileName': fileName,
-      'originalExtension': originalExtension,
-      'fileSize': fileSize,
-      'hiddenDate': hiddenDate.toIso8601String(),
-      'thumbnail': thumbnail,
-      'encryptionKey': encryptionKey,
-      'checksum': checksum,
-      'isEncrypted': isEncrypted,
-    };
-  }
+  bool get isEncrypted => format == VaultFileFormat.encrypted;
 
-  factory VaultVideo.fromJson(Map<String, dynamic> json) {
-    final fileName = json['fileName'] ?? '';
-    final extension =
-        (json['originalExtension'] ?? '').toString().trim().isNotEmpty
-            ? json['originalExtension'].toString()
-            : _getExtensionFromName(fileName);
+  VaultVideo copyWith({String? hiddenPath, VaultFileFormat? format}) {
     return VaultVideo(
-      id: json['id'],
-      originalPath: json['originalPath'],
-      hiddenPath: json['hiddenPath'],
+      id: id,
+      originalPath: originalPath,
+      hiddenPath: hiddenPath ?? this.hiddenPath,
       fileName: fileName,
-      originalExtension: extension,
-      fileSize: json['fileSize'],
-      hiddenDate: DateTime.parse(json['hiddenDate']),
-      thumbnail: json['thumbnail'] ?? '',
-      encryptionKey: json['encryptionKey'] ?? '',
-      checksum: json['checksum'] ?? '',
-      isEncrypted: json['isEncrypted'] ?? true,
+      originalExtension: originalExtension,
+      fileSize: fileSize,
+      hiddenDate: hiddenDate,
+      format: format ?? this.format,
     );
   }
 
-  static String _getExtensionFromName(String name) {
-    final parts = name.split('.');
-    if (parts.length <= 1) return '';
-    return parts.last;
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'originalPath': originalPath,
+    'hiddenPath': hiddenPath,
+    'fileName': fileName,
+    'originalExtension': originalExtension,
+    'fileSize': fileSize,
+    'hiddenDate': hiddenDate.toIso8601String(),
+    'format': format.name,
+  };
+
+  factory VaultVideo.fromJson(Map<String, dynamic> json) {
+    final fileName = (json['fileName'] ?? '').toString();
+    final storedExt = (json['originalExtension'] ?? '').toString().trim();
+    return VaultVideo(
+      id: json['id'] as String,
+      originalPath: json['originalPath'] as String,
+      hiddenPath: json['hiddenPath'] as String,
+      fileName: fileName,
+      originalExtension: storedExt.isNotEmpty
+          ? storedExt
+          : path.extension(fileName).replaceFirst('.', ''),
+      fileSize: (json['fileSize'] as num?)?.toInt() ?? 0,
+      hiddenDate:
+          DateTime.tryParse(json['hiddenDate']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      // Entries written before encryption existed carry no format field and
+      // were always stored as plain files.
+      format: json['format'] == VaultFileFormat.encrypted.name
+          ? VaultFileFormat.encrypted
+          : VaultFileFormat.plain,
+    );
   }
 }
 
+/// Outcome of a vault unlock attempt.
+enum VaultAuthStatus { success, invalidPassword, lockedOut, notSetUp, error }
+
+class VaultAuthResult {
+  final VaultAuthStatus status;
+
+  /// Time remaining before another attempt is allowed ([VaultAuthStatus.lockedOut]).
+  final Duration retryAfter;
+
+  const VaultAuthResult(this.status, {this.retryAfter = Duration.zero});
+
+  bool get isSuccess => status == VaultAuthStatus.success;
+}
+
+/// What the player should open for a vault video.
+class VaultPlayback {
+  /// Loopback URL for encrypted videos, otherwise null.
+  final Uri? url;
+
+  /// Local file handle for plain (legacy) videos, otherwise null.
+  final VaultPlaybackHandle? fileHandle;
+
+  const VaultPlayback._({this.url, this.fileHandle});
+
+  /// Releases the URL or restores the renamed file. Call when playback ends.
+  Future<void> release() async {
+    final url = this.url;
+    if (url != null) VaultStreamServer.unregister(url);
+    final handle = fileHandle;
+    if (handle != null) await VaultService.restoreDirectPlayback(handle);
+  }
+}
+
+/// Password-protected hidden folder with a decoy vault.
+///
+/// ## Key hierarchy
+///
+/// Each vault (main and decoy) has a random 256-bit data key that encrypts
+/// its files and its metadata list. The data key is stored only in wrapped
+/// form:
+///
+/// * main key, wrapped by a key derived from the main password;
+/// * main key, wrapped by a key derived from the recovery answers, so a
+///   password reset keeps existing files readable;
+/// * decoy key, wrapped by a key derived from the decoy password;
+/// * decoy key, wrapped by the main key, so the owner can rotate the decoy
+///   password.
+///
+/// The unwrapped key lives in memory only while the vault is unlocked.
 class VaultService {
   static const String _mainVaultKey = 'main_vault_password';
   static const String _fakeVaultKey = 'fake_vault_password';
@@ -89,43 +153,87 @@ class VaultService {
   static const String _isSetupKey = 'vault_is_setup';
   static const String _fakeModeKey = 'is_fake_mode';
 
+  // Wrapped data keys
+  static const String _mainDataKeyKey = 'vault_main_dek';
+  static const String _fakeDataKeyKey = 'vault_fake_dek';
+  static const String _mainRecoveryDataKeyKey = 'vault_main_dek_recovery';
+  static const String _fakeDataKeyByMainKey = 'vault_fake_dek_by_main';
+
   // Security Questions Keys
   static const String _securityQuestionsKey = 'security_questions';
   static const String _securityAnswersKey = 'security_answers';
   static const String _securitySetupKey = 'security_setup_done';
 
-  // Chunk size for file processing (8MB) balances speed and memory usage
-  static const int _chunkSize = 8 * 1024 * 1024;
-  static const int _yieldEveryBytes = 32 * 1024 * 1024;
-  static const bool _useEncryption = false;
-  static const String _hiddenExtension = 'vault';
+  // Brute-force protection
+  static const String _failedAttemptsKey = 'vault_failed_attempts';
+  static const String _lockedUntilKey = 'vault_locked_until_ms';
+  static const int _freeAttempts = 5;
+  static const Duration _baseLockout = Duration(seconds: 30);
+  static const Duration _maxLockout = Duration(hours: 1);
+
+  /// Minimum accepted length for vault passwords.
+  static const int minPasswordLength = 4;
+
+  static const String _encryptedMetadataPrefix = 'enc1:';
+  static const String _plainHiddenExtension = 'vault';
+  static const String _encryptedHiddenExtension = 'pvault';
+  static const int _copyChunkSize = 8 * 1024 * 1024;
+
+  static final Random _random = Random.secure();
 
   static bool _isInFakeMode = false;
   static bool _isAuthenticated = false;
+  static Uint8List? _dataKey;
 
   static bool get isInFakeMode => _isInFakeMode;
   static bool get isAuthenticated => _isAuthenticated;
 
-  // Security Questions Management
+  // ---------------------------------------------------------------------------
+  // Recovery questions
+  // ---------------------------------------------------------------------------
+
   static Future<bool> isSecuritySetup() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_securitySetupKey) ?? false;
   }
 
+  /// Whether the main vault key is recoverable through the recovery answers.
+  /// Vaults created by older versions lack this until questions are re-saved.
+  static Future<bool> hasRecoveryKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_mainRecoveryDataKeyKey) != null;
+  }
+
+  /// True when the unlocked vault should ask the owner to (re)configure
+  /// recovery questions before continuing.
+  static Future<bool> needsRecoverySetup() async {
+    if (!_isAuthenticated || _isInFakeMode) return false;
+    return !await isSecuritySetup() || !await hasRecoveryKey();
+  }
+
+  /// Stores recovery questions. Only the owner of the main vault may do this;
+  /// otherwise anyone holding the decoy password (or nobody at all) could set
+  /// answers and then use them to reset the main password.
   static Future<bool> setSecurityQuestions(
     List<String> questions,
     List<String> answers,
   ) async {
+    final dataKey = _dataKey;
+    if (!_isAuthenticated || _isInFakeMode || dataKey == null) return false;
+    if (questions.length != answers.length || questions.isEmpty) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Hash answers for security
-      final hashedAnswers = answers
-          .map((answer) => _hashPassword(answer.toLowerCase()))
-          .toList();
+      final normalized = answers.map(normalizeAnswer).toList();
+      final hashedAnswers = await Future.wait(normalized.map(_hashSecret));
+      final recoveryWrap = await VaultCrypto.wrapKeyWithSecret(
+        dataKey,
+        _recoverySecret(normalized),
+      );
 
       await prefs.setStringList(_securityQuestionsKey, questions);
       await prefs.setStringList(_securityAnswersKey, hashedAnswers);
+      await prefs.setString(_mainRecoveryDataKeyKey, recoveryWrap);
       await prefs.setBool(_securitySetupKey, true);
 
       debugPrint('Security questions set up successfully');
@@ -141,49 +249,96 @@ class VaultService {
     return prefs.getStringList(_securityQuestionsKey);
   }
 
+  /// Canonical form of a recovery answer: case, surrounding and repeated
+  /// whitespace are ignored so "  New  York" matches "new york".
+  @visibleForTesting
+  static String normalizeAnswer(String answer) =>
+      answer.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  static String _recoverySecret(List<String> normalizedAnswers) =>
+      normalizedAnswers.join('\u0000');
+
   static Future<bool> verifySecurityAnswers(List<String> answers) async {
+    if (await getLockoutRemaining() > Duration.zero) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final storedHashedAnswers =
           prefs.getStringList(_securityAnswersKey) ?? [];
 
-      if (storedHashedAnswers.length != answers.length) return false;
-
-      for (int i = 0; i < answers.length; i++) {
-        final inputHash = _hashPassword(answers[i].toLowerCase());
-        if (inputHash != storedHashedAnswers[i]) {
-          return false;
-        }
+      if (storedHashedAnswers.isEmpty ||
+          storedHashedAnswers.length != answers.length) {
+        await _registerFailedAttempt();
+        return false;
       }
 
-      return true;
+      var allMatch = true;
+      for (int i = 0; i < answers.length; i++) {
+        final stored = storedHashedAnswers[i];
+        // Older versions hashed `answer.toLowerCase()` without trimming.
+        final matches =
+            await _verifySecret(normalizeAnswer(answers[i]), stored) ||
+            (PasswordHasher.needsRehash(stored) &&
+                await _verifySecret(answers[i].toLowerCase(), stored));
+        allMatch &= matches;
+      }
+
+      if (allMatch) {
+        await _clearFailedAttempts();
+      } else {
+        await _registerFailedAttempt();
+      }
+      return allMatch;
     } catch (e) {
       debugPrint('Error verifying security answers: $e');
       return false;
     }
   }
 
+  /// Sets a new main password after the recovery answers are verified.
+  ///
+  /// The main data key is recovered with the answers and re-wrapped, so
+  /// encrypted videos stay readable. The decoy password is left untouched,
+  /// and the new main password must differ from it.
   static Future<bool> resetPasswordWithSecurity(
     String newPassword,
     List<String> answers,
   ) async {
+    if (newPassword.length < minPasswordLength) return false;
     if (!await verifySecurityAnswers(answers)) return false;
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      final fakeHash = prefs.getString(_fakeVaultKey) ?? '';
+      if (fakeHash.isNotEmpty && await _verifySecret(newPassword, fakeHash)) {
+        return false;
+      }
 
-      // Hash new passwords
-      final mainHash = _hashPassword(newPassword);
-      final fakeHash = _hashPassword(
-        'decoy123',
-      ); // Set a default fake password as well
+      Uint8List? dataKey;
+      final recoveryWrap = prefs.getString(_mainRecoveryDataKeyKey);
+      if (recoveryWrap != null) {
+        dataKey = await VaultCrypto.unwrapKeyWithSecret(
+          recoveryWrap,
+          _recoverySecret(answers.map(normalizeAnswer).toList()),
+        );
+        if (dataKey == null) return false;
+      } else if (prefs.getString(_mainDataKeyKey) != null) {
+        // Only possible for vaults that never re-saved their questions after
+        // upgrading; they have no encrypted content yet (encryption starts
+        // after recovery setup), so a fresh key loses nothing.
+        dataKey = VaultCrypto.newKey();
+        await prefs.remove(_fakeDataKeyByMainKey);
+      }
 
-      // Reset both to known states
-      await prefs.setString(_mainVaultKey, mainHash);
-      await prefs.setString(_fakeVaultKey, fakeHash);
+      await prefs.setString(_mainVaultKey, await _hashSecret(newPassword));
+      if (dataKey != null) {
+        await prefs.setString(
+          _mainDataKeyKey,
+          await VaultCrypto.wrapKeyWithSecret(dataKey, newPassword),
+        );
+      }
       await prefs.setBool(_isSetupKey, true);
 
-      debugPrint('Passwords reset successfully using security questions');
+      debugPrint('Main password reset using security questions');
       return true;
     } catch (e) {
       debugPrint('Error resetting password: $e');
@@ -191,23 +346,43 @@ class VaultService {
     }
   }
 
-  // Password Setup
+  // ---------------------------------------------------------------------------
+  // Setup and authentication
+  // ---------------------------------------------------------------------------
+
   static Future<bool> setupVault(
     String mainPassword,
     String fakePassword,
   ) async {
+    if (mainPassword.length < minPasswordLength ||
+        fakePassword.length < minPasswordLength ||
+        mainPassword == fakePassword) {
+      return false;
+    }
+    // Re-running setup would silently replace the passwords of an existing
+    // vault; that must go through changePassword or hardResetVault instead.
+    if (await isVaultSetup()) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
+      final mainKey = VaultCrypto.newKey();
+      final fakeKey = VaultCrypto.newKey();
 
-      // Hash passwords before storing
-      final mainHash = _hashPassword(mainPassword);
-      final fakeHash = _hashPassword(fakePassword);
+      final results = await Future.wait([
+        _hashSecret(mainPassword),
+        _hashSecret(fakePassword),
+        VaultCrypto.wrapKeyWithSecret(mainKey, mainPassword),
+        VaultCrypto.wrapKeyWithSecret(fakeKey, fakePassword),
+        VaultCrypto.wrapKey(fakeKey, mainKey),
+      ]);
 
-      await prefs.setString(_mainVaultKey, mainHash);
-      await prefs.setString(_fakeVaultKey, fakeHash);
+      await prefs.setString(_mainVaultKey, results[0]);
+      await prefs.setString(_fakeVaultKey, results[1]);
+      await prefs.setString(_mainDataKeyKey, results[2]);
+      await prefs.setString(_fakeDataKeyKey, results[3]);
+      await prefs.setString(_fakeDataKeyByMainKey, results[4]);
       await prefs.setBool(_isSetupKey, true);
+      await _clearFailedAttempts();
 
-      // Create vault directories
       await _createVaultDirectories();
 
       debugPrint('Vault setup completed');
@@ -223,418 +398,191 @@ class VaultService {
     return prefs.getBool(_isSetupKey) ?? false;
   }
 
-  // Authentication
-  static Future<bool> authenticate(String password) async {
+  /// How long the user must wait before the next unlock attempt.
+  static Future<Duration> getLockoutRemaining() async {
+    final prefs = await SharedPreferences.getInstance();
+    final untilMs = prefs.getInt(_lockedUntilKey) ?? 0;
+    final remaining = untilMs - DateTime.now().millisecondsSinceEpoch;
+    return remaining > 0 ? Duration(milliseconds: remaining) : Duration.zero;
+  }
+
+  @visibleForTesting
+  static Duration lockoutFor(int failedAttempts) {
+    if (failedAttempts < _freeAttempts) return Duration.zero;
+    final exponent = (failedAttempts - _freeAttempts).clamp(0, 16);
+    final lockout = _baseLockout * (1 << exponent);
+    return lockout > _maxLockout ? _maxLockout : lockout;
+  }
+
+  static Future<void> _registerFailedAttempt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final attempts = (prefs.getInt(_failedAttemptsKey) ?? 0) + 1;
+    await prefs.setInt(_failedAttemptsKey, attempts);
+    final lockout = lockoutFor(attempts);
+    if (lockout > Duration.zero) {
+      await prefs.setInt(
+        _lockedUntilKey,
+        DateTime.now().add(lockout).millisecondsSinceEpoch,
+      );
+    }
+  }
+
+  static Future<void> _clearFailedAttempts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_failedAttemptsKey);
+    await prefs.remove(_lockedUntilKey);
+  }
+
+  static Future<bool> authenticate(String password) async =>
+      (await unlock(password)).isSuccess;
+
+  /// Attempts to unlock the vault, applying brute-force throttling.
+  static Future<VaultAuthResult> unlock(String password) async {
     try {
       final prefs = await SharedPreferences.getInstance();
 
       if (!await isVaultSetup()) {
-        return false; // Don't auto-setup with default passwords, secure by default
+        return const VaultAuthResult(VaultAuthStatus.notSetUp);
+      }
+
+      final lockout = await getLockoutRemaining();
+      if (lockout > Duration.zero) {
+        return VaultAuthResult(VaultAuthStatus.lockedOut, retryAfter: lockout);
       }
 
       final mainHash = prefs.getString(_mainVaultKey) ?? '';
       final fakeHash = prefs.getString(_fakeVaultKey) ?? '';
 
-      final inputHash = _hashPassword(password);
+      // Check both so timing does not reveal which vault a password opens.
+      final results = await Future.wait([
+        _verifySecret(password, mainHash),
+        _verifySecret(password, fakeHash),
+      ]);
+      final isMain = results[0];
+      final isFake = results[1];
 
-      if (inputHash == mainHash) {
-        _isAuthenticated = true;
-        _isInFakeMode = false;
-        await prefs.setBool(_fakeModeKey, false);
-        debugPrint('Authenticated with main vault');
-
-        // Ensure directories exist
-        await _createVaultDirectories();
-
-        return true;
-      } else if (inputHash == fakeHash) {
-        _isAuthenticated = true;
-        _isInFakeMode = true;
-        await prefs.setBool(_fakeModeKey, true);
-        debugPrint('Authenticated with fake vault');
-
-        await _createVaultDirectories();
-
-        return true;
+      if (!isMain && !isFake) {
+        await _registerFailedAttempt();
+        final lockout = await getLockoutRemaining();
+        return lockout > Duration.zero
+            ? VaultAuthResult(VaultAuthStatus.lockedOut, retryAfter: lockout)
+            : const VaultAuthResult(VaultAuthStatus.invalidPassword);
       }
 
-      return false;
+      final dataKey = await _loadOrCreateDataKey(
+        prefs,
+        password,
+        isMain: isMain,
+      );
+      if (dataKey == null) {
+        return const VaultAuthResult(VaultAuthStatus.error);
+      }
+
+      await _clearFailedAttempts();
+      _dataKey = dataKey;
+      _isAuthenticated = true;
+      _isInFakeMode = !isMain;
+      await prefs.setBool(_fakeModeKey, _isInFakeMode);
+
+      // Transparently upgrade hashes written by older app versions.
+      final matchedKey = isMain ? _mainVaultKey : _fakeVaultKey;
+      final matchedHash = isMain ? mainHash : fakeHash;
+      if (PasswordHasher.needsRehash(matchedHash)) {
+        await prefs.setString(matchedKey, await _hashSecret(password));
+      }
+
+      debugPrint(
+        isMain
+            ? 'Authenticated with main vault'
+            : 'Authenticated with fake vault',
+      );
+      await _createVaultDirectories();
+      return const VaultAuthResult(VaultAuthStatus.success);
     } catch (e) {
       debugPrint('Authentication error: $e');
-      return false;
+      return const VaultAuthResult(VaultAuthStatus.error);
     }
+  }
+
+  /// Unwraps the vault's data key, creating one for vaults set up before
+  /// encryption existed.
+  static Future<Uint8List?> _loadOrCreateDataKey(
+    SharedPreferences prefs,
+    String password, {
+    required bool isMain,
+  }) async {
+    final storageKey = isMain ? _mainDataKeyKey : _fakeDataKeyKey;
+    final wrapped = prefs.getString(storageKey);
+    if (wrapped != null) {
+      final key = await VaultCrypto.unwrapKeyWithSecret(wrapped, password);
+      if (key == null) debugPrint('Vault key could not be unwrapped');
+      return key;
+    }
+
+    final key = VaultCrypto.newKey();
+    await prefs.setString(
+      storageKey,
+      await VaultCrypto.wrapKeyWithSecret(key, password),
+    );
+    return key;
   }
 
   static Future<void> logout() async {
     _isAuthenticated = false;
     _isInFakeMode = false;
+    _dataKey?.fillRange(0, _dataKey!.length, 0);
+    _dataKey = null;
+    await VaultStreamServer.stop();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_fakeModeKey, false);
     debugPrint('Logged out from vault');
   }
 
-  // Enhanced Video Management with Streaming Encryption
-  static Future<bool> hideVideo(
-    String videoPath, {
-    ValueChanged<double>? onProgress,
-  }) async {
-    if (!_isAuthenticated) return false;
-
-    try {
-      final videoFile = File(videoPath);
-      if (!await videoFile.exists()) return false;
-
-      final videoId = _generateVideoId();
-      final encryptionKey = _useEncryption ? _generateEncryptionKey() : '';
-      final hiddenFileName = '$videoId.$_hiddenExtension';
-      final vaultDir = await _getVaultDirectory();
-      final hiddenPath = '${vaultDir.path}/$hiddenFileName';
-
-      final sourceSize = await videoFile.length();
-      String checksum = '';
-
-      if (_useEncryption) {
-        RandomAccessFile? sourceRaf;
-        IOSink? destSink;
-        try {
-          sourceRaf = await videoFile.open(mode: FileMode.read);
-          final destFile = File(hiddenPath);
-          destSink = destFile.openWrite();
-
-          final output = AccumulatorSink<Digest>();
-          final checksumSink = sha256.startChunkedConversion(output);
-
-          final key = encrypt.Key.fromBase64(encryptionKey);
-          final encrypter = encrypt.Encrypter(encrypt.AES(key));
-          int bytesRead = 0;
-          int bytesSinceYield = 0;
-
-          while (bytesRead < sourceSize) {
-            final remaining = sourceSize - bytesRead;
-            final toRead = remaining < _chunkSize ? remaining : _chunkSize;
-            final dataBytes = await sourceRaf.read(toRead);
-
-            checksumSink.add(dataBytes);
-
-            final iv = encrypt.IV.fromSecureRandom(16);
-            final encrypted = encrypter.encryptBytes(dataBytes, iv: iv);
-
-            final lengthBytes = Uint8List(4);
-            final len = encrypted.bytes.length;
-            ByteData.view(lengthBytes.buffer).setUint32(0, len, Endian.big);
-
-            destSink.add(iv.bytes);
-            destSink.add(lengthBytes);
-            destSink.add(encrypted.bytes);
-
-            bytesRead += toRead;
-            bytesSinceYield += toRead;
-
-            if (onProgress != null && sourceSize > 0) {
-              onProgress(bytesRead / sourceSize);
-            }
-
-            if (bytesSinceYield >= _yieldEveryBytes) {
-              bytesSinceYield = 0;
-              await Future.delayed(Duration.zero);
-            }
-          }
-
-          checksumSink.close();
-          await destSink.flush();
-          await destSink.close();
-          await sourceRaf.close();
-
-          checksum = output.events.single.toString();
-        } catch (e) {
-          await sourceRaf?.close();
-          await destSink?.close();
-          rethrow;
-        }
-      } else {
-        final moved = await _moveFileToPath(
-          sourceFile: videoFile,
-          destinationPath: hiddenPath,
-          onProgress: onProgress,
-        );
-        if (!moved) return false;
-        onProgress?.call(1.0);
-      }
-
-      // Create vault video object
-      final vaultVideo = VaultVideo(
-        id: videoId,
-        originalPath: videoPath,
-        hiddenPath: hiddenPath,
-        fileName: videoFile.uri.pathSegments.last,
-        originalExtension: path.extension(videoPath).replaceFirst('.', ''),
-        fileSize: sourceSize,
-        hiddenDate: DateTime.now(),
-        thumbnail: await _generateThumbnail(videoPath, encryptionKey),
-        encryptionKey: encryptionKey,
-        checksum: checksum,
-        isEncrypted: _useEncryption,
-      );
-
-      await _saveVideoToVault(vaultVideo);
-
-      await VideoScannerService.removeFromCache(videoPath);
-      await ThumbnailService.deleteThumbnail(videoPath);
-
-      onProgress?.call(1.0);
-      debugPrint('Video securely hidden: ${vaultVideo.fileName}');
-      return true;
-    } catch (e) {
-      debugPrint('Error hiding video: $e');
-      return false;
-    }
-  }
-
-  static Future<bool> unhideVideo(
-    String videoId, {
-    ValueChanged<double>? onProgress,
-  }) async {
-    if (!_isAuthenticated) return false;
-
-    try {
-      final videos = await _getVaultVideos();
-      final video = videos.firstWhere((v) => v.id == videoId);
-      bool success = false;
-
-      if (video.isEncrypted) {
-        success = await _decryptVideoToPath(
-          video,
-          video.originalPath,
-          onProgress: onProgress,
-        );
-      } else {
-        success = await _moveFileToPath(
-          sourceFile: File(video.hiddenPath),
-          destinationPath: video.originalPath,
-          onProgress: onProgress,
-        );
-      }
-
-      if (!success) return false;
-
-      await _removeVideoFromVault(videoId);
-
-      debugPrint('Video securely unhidden: ${video.fileName}');
-      return true;
-    } catch (e) {
-      debugPrint('Error unhiding video: $e');
-      return false;
-    }
-  }
-
-  static Future<List<VaultVideo>> getVaultVideos() async {
-    if (!_isAuthenticated) return [];
-    return await _getVaultVideos();
-  }
-
-  // Private Helper Methods
-  static String _hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    final hash = sha256.convert(bytes);
-    return hash.toString();
-  }
-
-  static String _generateVideoId() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final random = DateTime.now().microsecondsSinceEpoch;
-    return '${timestamp}_$random';
-  }
-
-
-  static Future<Directory> _getVaultDirectory() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final vaultName = _isInFakeMode ? 'fake_vault' : 'main_vault';
-    final vaultDir = Directory('${appDir.path}/$vaultName');
-
-    if (!await vaultDir.exists()) {
-      await vaultDir.create(recursive: true);
-    }
-    await _ensureNoMediaFile(vaultDir);
-
-    return vaultDir;
-  }
-
-  static Future<void> _createVaultDirectories() async {
-    final appDir = await getApplicationDocumentsDirectory();
-
-    final mainVaultDir = Directory('${appDir.path}/main_vault');
-    final fakeVaultDir = Directory('${appDir.path}/fake_vault');
-
-    if (!await mainVaultDir.exists()) {
-      await mainVaultDir.create(recursive: true);
-    }
-
-    if (!await fakeVaultDir.exists()) {
-      await fakeVaultDir.create(recursive: true);
-    }
-
-    await _ensureNoMediaFile(mainVaultDir);
-    await _ensureNoMediaFile(fakeVaultDir);
-  }
-
-  static Future<void> _ensureNoMediaFile(Directory dir) async {
-    try {
-      final noMedia = File(path.join(dir.path, '.nomedia'));
-      if (!await noMedia.exists()) {
-        await noMedia.writeAsString('');
-      }
-    } catch (e) {
-      debugPrint('Error creating .nomedia file: $e');
-    }
-  }
-
-  static Future<void> _saveVideoToVault(VaultVideo video) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = _isInFakeMode ? _fakeVideosKey : _mainVideosKey;
-
-    final videosJson = prefs.getString(key) ?? '[]';
-    final videosList = json.decode(videosJson) as List;
-    videosList.add(video.toJson());
-
-    await prefs.setString(key, json.encode(videosList));
-  }
-
-  static Future<List<VaultVideo>> _getVaultVideos() async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = _isInFakeMode ? _fakeVideosKey : _mainVideosKey;
-
-    final videosJson = prefs.getString(key) ?? '[]';
-    final videosList = json.decode(videosJson) as List;
-
-    return videosList.map((json) => VaultVideo.fromJson(json)).toList();
-  }
-
-  static Future<void> _removeVideoFromVault(String videoId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = _isInFakeMode ? _fakeVideosKey : _mainVideosKey;
-
-    final videosJson = prefs.getString(key) ?? '[]';
-    final videosList = json.decode(videosJson) as List;
-
-    videosList.removeWhere((video) => video['id'] == videoId);
-
-    await prefs.setString(key, json.encode(videosList));
-  }
-
-  static String _generateEncryptionKey() {
-    final key = encrypt.Key.fromSecureRandom(32); // 256-bit key
-    return key.base64;
-  }
-
-
-
-  // Legacy/Helper
-  static Future<bool> deleteFromVault(String videoId) async {
-    if (!_isAuthenticated) return false;
-
-    try {
-      final videos = await _getVaultVideos();
-      final video = videos.firstWhere((v) => v.id == videoId);
-
-      final hiddenFile = File(video.hiddenPath);
-      if (await hiddenFile.exists()) {
-        await hiddenFile.delete(); // Simplified delete
-      }
-
-      await _removeVideoFromVault(videoId);
-
-      debugPrint('Video deleted from vault: ${video.fileName}');
-      return true;
-    } catch (e) {
-      debugPrint('Error deleting from vault: $e');
-      return false;
-    }
-  }
-
-  static Future<void> clearVault() async {
-    if (!_isAuthenticated) return;
-
-    try {
-      final videos = await _getVaultVideos();
-
-      for (final video in videos) {
-        final hiddenFile = File(video.hiddenPath);
-        if (await hiddenFile.exists()) {
-          await hiddenFile.delete();
-        }
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final key = _isInFakeMode ? _fakeVideosKey : _mainVideosKey;
-      await prefs.setString(key, '[]');
-
-      debugPrint('Vault cleared');
-    } catch (e) {
-      debugPrint('Error clearing vault: $e');
-    }
-  }
-
-  static Future<int> getVaultSize() async {
-    if (!_isAuthenticated) return 0;
-
-    try {
-      final videos = await _getVaultVideos();
-      int totalSize = 0;
-
-      for (final video in videos) {
-        final hiddenFile = File(video.hiddenPath);
-        if (await hiddenFile.exists()) {
-          totalSize += await hiddenFile.length();
-        }
-      }
-
-      return totalSize;
-    } catch (e) {
-      debugPrint('Error calculating vault size: $e');
-      return 0;
-    }
-  }
-
-  static Future<bool> verifyVaultIntegrity() async {
-    if (!_isAuthenticated) return false;
-
-    try {
-      final videos = await _getVaultVideos();
-
-      for (final video in videos) {
-        final hiddenFile = File(video.hiddenPath);
-        if (!await hiddenFile.exists()) {
-          debugPrint('Missing file detected: ${video.fileName}');
-          return false;
-        }
-      }
-
-      debugPrint('Vault integrity verification passed');
-      return true;
-    } catch (e) {
-      debugPrint('Error during vault integrity check: $e');
-      return false;
-    }
-  }
-
+  /// Replaces both passwords. Requires an unlocked *main* vault and the
+  /// current main password; the decoy password cannot change the real one.
+  ///
+  /// Returns false if the decoy vault holds a key the main vault cannot
+  /// recover (a decoy vault first opened after upgrading from a version
+  /// without encryption); changing its password would orphan its files.
   static Future<bool> changePassword(
     String oldPassword,
     String newMainPassword,
     String newFakePassword,
   ) async {
-    if (!_isAuthenticated) return false;
+    final mainKey = _dataKey;
+    if (!_isAuthenticated || _isInFakeMode || mainKey == null) return false;
+    if (newMainPassword.length < minPasswordLength ||
+        newFakePassword.length < minPasswordLength ||
+        newMainPassword == newFakePassword) {
+      return false;
+    }
 
     try {
-      // Verify old password
-      if (!await authenticate(oldPassword)) return false;
-
       final prefs = await SharedPreferences.getInstance();
+      final mainHash = prefs.getString(_mainVaultKey) ?? '';
+      if (!await _verifySecret(oldPassword, mainHash)) return false;
 
-      final newMainHash = _hashPassword(newMainPassword);
-      final newFakeHash = _hashPassword(newFakePassword);
+      Uint8List? fakeKey;
+      final fakeByMain = prefs.getString(_fakeDataKeyByMainKey);
+      if (fakeByMain != null) {
+        fakeKey = await VaultCrypto.unwrapKey(fakeByMain, mainKey);
+        if (fakeKey == null) return false;
+      } else if (prefs.getString(_fakeDataKeyKey) != null) {
+        return false;
+      }
 
-      await prefs.setString(_mainVaultKey, newMainHash);
-      await prefs.setString(_fakeVaultKey, newFakeHash);
+      await prefs.setString(_mainVaultKey, await _hashSecret(newMainPassword));
+      await prefs.setString(_fakeVaultKey, await _hashSecret(newFakePassword));
+      await prefs.setString(
+        _mainDataKeyKey,
+        await VaultCrypto.wrapKeyWithSecret(mainKey, newMainPassword),
+      );
+      if (fakeKey != null) {
+        await prefs.setString(
+          _fakeDataKeyKey,
+          await VaultCrypto.wrapKeyWithSecret(fakeKey, newFakePassword),
+        );
+      }
 
       debugPrint('Passwords changed successfully');
       return true;
@@ -648,217 +596,492 @@ class VaultService {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Clear all files
       final appDir = await getApplicationDocumentsDirectory();
-      final mainVaultDir = Directory('${appDir.path}/main_vault');
-      final fakeVaultDir = Directory('${appDir.path}/fake_vault');
-
-      if (await mainVaultDir.exists()) {
-        await mainVaultDir.delete(recursive: true);
-      }
-      if (await fakeVaultDir.exists()) {
-        await fakeVaultDir.delete(recursive: true);
+      for (final name in ['main_vault', 'fake_vault']) {
+        final dir = Directory(path.join(appDir.path, name));
+        if (await dir.exists()) await dir.delete(recursive: true);
       }
 
-      // Clear all keys
-      await prefs.remove(_mainVaultKey);
-      await prefs.remove(_fakeVaultKey);
-      await prefs.remove(_mainVideosKey);
-      await prefs.remove(_fakeVideosKey);
-      await prefs.remove(_isSetupKey);
-      await prefs.remove(_fakeModeKey);
-      await prefs.remove(_securityQuestionsKey);
-      await prefs.remove(_securityAnswersKey);
-      await prefs.remove(_securitySetupKey);
+      for (final key in [
+        _mainVaultKey,
+        _fakeVaultKey,
+        _mainVideosKey,
+        _fakeVideosKey,
+        _isSetupKey,
+        _fakeModeKey,
+        _securityQuestionsKey,
+        _securityAnswersKey,
+        _securitySetupKey,
+        _failedAttemptsKey,
+        _lockedUntilKey,
+        _mainDataKeyKey,
+        _fakeDataKeyKey,
+        _mainRecoveryDataKeyKey,
+        _fakeDataKeyByMainKey,
+      ]) {
+        await prefs.remove(key);
+      }
 
-      _isAuthenticated = false;
-      _isInFakeMode = false;
-
+      await logout();
       debugPrint('Vault hard reset completed');
     } catch (e) {
       debugPrint('Error during hard reset: $e');
     }
   }
 
-  static Future<String> _generateThumbnail(
-    String videoPath,
-    String encryptionKey,
-  ) async {
+  // ---------------------------------------------------------------------------
+  // Videos
+  // ---------------------------------------------------------------------------
+
+  /// Encrypts [videoPath] into the vault and deletes the original.
+  static Future<bool> hideVideo(
+    String videoPath, {
+    ValueChanged<double>? onProgress,
+  }) async {
+    final dataKey = _dataKey;
+    if (!_isAuthenticated || dataKey == null) return false;
+
+    final source = File(videoPath);
+    File? hidden;
     try {
-      final thumbnailDir = Directory(
-        '${await _getVaultDirectory()}/thumbnails',
+      if (!await source.exists()) return false;
+
+      final videoId = _generateVideoId();
+      final vaultDir = await _getVaultDirectory();
+      hidden = File(
+        path.join(vaultDir.path, '$videoId.$_encryptedHiddenExtension'),
       );
-      if (!await thumbnailDir.exists()) {
-        await thumbnailDir.create(recursive: true);
+      final sourceSize = await source.length();
+
+      await VaultCrypto.encryptFile(
+        source,
+        hidden,
+        dataKey,
+        onProgress: onProgress,
+      );
+
+      final vaultVideo = VaultVideo(
+        id: videoId,
+        originalPath: videoPath,
+        hiddenPath: hidden.path,
+        fileName: path.basename(videoPath),
+        originalExtension: path.extension(videoPath).replaceFirst('.', ''),
+        fileSize: sourceSize,
+        hiddenDate: DateTime.now(),
+        format: VaultFileFormat.encrypted,
+      );
+
+      // Remove the original last: if that fails, undo so the video is not
+      // left in two places.
+      try {
+        await source.delete();
+      } catch (e) {
+        debugPrint('Could not delete original after encrypting: $e');
+        await hidden.delete();
+        return false;
       }
 
-      final thumbnailPath =
-          '${thumbnailDir.path}/${DateTime.now().millisecondsSinceEpoch}_thumb.jpg';
+      await _updateVideos((videos) => [...videos, vaultVideo]);
+      await VideoScannerService.removeFromCache(videoPath);
+      await ThumbnailService.deleteThumbnail(videoPath);
 
-      // Just creating a dummy file for now
-      // In real app, generate actual thumb
-      await File(thumbnailPath).writeAsBytes([0, 0, 0, 0]);
-
-      return thumbnailPath;
+      onProgress?.call(1.0);
+      debugPrint('Video hidden and encrypted');
+      return true;
     } catch (e) {
-      debugPrint('Error generating thumbnail: $e');
-      return '';
+      debugPrint('Error hiding video: $e');
+      if (hidden != null && await source.exists() && await hidden.exists()) {
+        await hidden.delete();
+      }
+      return false;
     }
   }
 
-  static Future<String?> exportVideoForSharing(VaultVideo video) async {
-    if (!_isAuthenticated) return null;
+  /// Restores a video to its original folder (or a free name next to it).
+  static Future<bool> unhideVideo(
+    String videoId, {
+    ValueChanged<double>? onProgress,
+  }) async {
+    if (!_isAuthenticated) return false;
 
     try {
-      final tempDir = await getTemporaryDirectory();
-      final exportPath = path.join(tempDir.path, 'shared_${video.fileName}');
-      final exportFile = File(exportPath);
-
-      if (await exportFile.exists()) {
-        await exportFile.delete();
-      }
+      final video = (await _getVaultVideos()).firstWhere(
+        (v) => v.id == videoId,
+      );
+      // Never clobber a file that has since appeared at the original path.
+      final destination = await availablePath(video.originalPath);
 
       final success = video.isEncrypted
-          ? await _decryptVideoToPath(video, exportPath)
-          : await _copyVideoToPath(
-              sourcePath: video.hiddenPath,
-              destinationPath: exportPath,
+          ? await _decryptVideoToPath(
+              video,
+              destination,
+              onProgress: onProgress,
+            )
+          : await _moveFileToPath(
+              sourceFile: File(video.hiddenPath),
+              destinationPath: destination,
+              onProgress: onProgress,
             );
-      if (!success) return null;
+      if (!success) return false;
 
-      return exportPath;
+      if (video.isEncrypted) {
+        final hidden = File(video.hiddenPath);
+        if (await hidden.exists()) await hidden.delete();
+      }
+      await _updateVideos(
+        (videos) => videos.where((v) => v.id != videoId).toList(),
+      );
+
+      debugPrint('Video restored from vault');
+      return true;
     } catch (e) {
-      debugPrint('Error exporting video for sharing: $e');
-      return null;
+      debugPrint('Error unhiding video: $e');
+      return false;
     }
   }
 
+  static Future<List<VaultVideo>> getVaultVideos() async {
+    if (!_isAuthenticated) return [];
+    return _getVaultVideos();
+  }
+
+  /// Number of videos in the open vault still stored without encryption.
+  static Future<int> countUnencryptedVideos() async {
+    if (!_isAuthenticated) return 0;
+    return (await _getVaultVideos()).where((v) => !v.isEncrypted).length;
+  }
+
+  /// Encrypts videos hidden by versions that stored them as plain files.
+  ///
+  /// Each file is encrypted to a new path, the metadata is switched over,
+  /// and only then is the plain file deleted, so an interruption never loses
+  /// a video. Returns the number of videos encrypted.
+  static Future<int> encryptPendingVideos({
+    void Function(int done, int total, double fileProgress)? onProgress,
+  }) async {
+    final dataKey = _dataKey;
+    if (!_isAuthenticated || dataKey == null) return 0;
+
+    final pending = (await _getVaultVideos())
+        .where((v) => !v.isEncrypted)
+        .toList();
+    var done = 0;
+    for (final video in pending) {
+      final plain = File(video.hiddenPath);
+      if (!await plain.exists()) {
+        done++;
+        continue;
+      }
+      final encrypted = File(
+        path.join(plain.parent.path, '${video.id}.$_encryptedHiddenExtension'),
+      );
+      try {
+        await VaultCrypto.encryptFile(
+          plain,
+          encrypted,
+          dataKey,
+          onProgress: (p) => onProgress?.call(done, pending.length, p),
+        );
+        await _updateVideos(
+          (videos) => [
+            for (final v in videos)
+              v.id == video.id
+                  ? v.copyWith(
+                      hiddenPath: encrypted.path,
+                      format: VaultFileFormat.encrypted,
+                    )
+                  : v,
+          ],
+        );
+        await plain.delete();
+      } catch (e) {
+        debugPrint('Error encrypting existing vault video: $e');
+        if (await encrypted.exists() && await plain.exists()) {
+          await encrypted.delete();
+        }
+        continue;
+      }
+      done++;
+      onProgress?.call(done, pending.length, 1.0);
+    }
+    return done;
+  }
+
+  /// Prepares [video] for the player. Encrypted videos are streamed through
+  /// [VaultStreamServer]; call [VaultPlayback.release] when done.
+  static Future<VaultPlayback> openForPlayback(VaultVideo video) async {
+    final dataKey = _dataKey;
+    if (video.isEncrypted) {
+      if (!_isAuthenticated || dataKey == null) {
+        throw StateError('Vault is locked');
+      }
+      final url = await VaultStreamServer.register(
+        file: File(video.hiddenPath),
+        key: dataKey,
+        extension: video.originalExtension,
+      );
+      return VaultPlayback._(url: url);
+    }
+    return VaultPlayback._(fileHandle: await prepareDirectPlayback(video));
+  }
+
+  static Future<bool> deleteFromVault(String videoId) async {
+    if (!_isAuthenticated) return false;
+
+    try {
+      final video = (await _getVaultVideos()).firstWhere(
+        (v) => v.id == videoId,
+      );
+      final hiddenFile = File(video.hiddenPath);
+      if (await hiddenFile.exists()) await hiddenFile.delete();
+
+      await _updateVideos(
+        (videos) => videos.where((v) => v.id != videoId).toList(),
+      );
+      debugPrint('Video deleted from vault');
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting from vault: $e');
+      return false;
+    }
+  }
+
+  static Future<void> clearVault() async {
+    if (!_isAuthenticated) return;
+
+    try {
+      for (final video in await _getVaultVideos()) {
+        final hiddenFile = File(video.hiddenPath);
+        if (await hiddenFile.exists()) await hiddenFile.delete();
+      }
+      await _updateVideos((_) => []);
+      debugPrint('Vault cleared');
+    } catch (e) {
+      debugPrint('Error clearing vault: $e');
+    }
+  }
+
+  static Future<int> getVaultSize() async {
+    if (!_isAuthenticated) return 0;
+
+    try {
+      int totalSize = 0;
+      for (final video in await _getVaultVideos()) {
+        final hiddenFile = File(video.hiddenPath);
+        if (await hiddenFile.exists()) totalSize += await hiddenFile.length();
+      }
+      return totalSize;
+    } catch (e) {
+      debugPrint('Error calculating vault size: $e');
+      return 0;
+    }
+  }
+
+  /// Checks that every vault file exists and that encrypted files have a
+  /// valid, authenticated first chunk.
+  static Future<bool> verifyVaultIntegrity() async {
+    final dataKey = _dataKey;
+    if (!_isAuthenticated || dataKey == null) return false;
+
+    try {
+      for (final video in await _getVaultVideos()) {
+        final hiddenFile = File(video.hiddenPath);
+        if (!await hiddenFile.exists()) {
+          debugPrint('Missing vault file detected');
+          return false;
+        }
+        if (video.isEncrypted) {
+          final reader = await EncryptedFileReader.open(hiddenFile, dataKey);
+          try {
+            await reader.readChunk(0);
+          } finally {
+            await reader.close();
+          }
+        }
+      }
+      debugPrint('Vault integrity verification passed');
+      return true;
+    } catch (e) {
+      debugPrint('Error during vault integrity check: $e');
+      return false;
+    }
+  }
+
+  /// Writes a decrypted copy to the temp directory for the share sheet.
+  static Future<String?> exportVideoForSharing(VaultVideo video) =>
+      _exportToTemp(video, 'share');
+
+  /// Writes a decrypted copy to the temp directory.
   static Future<String?> exportVideoForPlayback(
     VaultVideo video, {
+    ValueChanged<double>? onProgress,
+  }) => _exportToTemp(video, 'play', onProgress: onProgress);
+
+  static Future<String?> _exportToTemp(
+    VaultVideo video,
+    String purpose, {
     ValueChanged<double>? onProgress,
   }) async {
     if (!_isAuthenticated) return null;
 
     try {
-      final tempDir = await getTemporaryDirectory();
-      final exportPath = path.join(tempDir.path, 'vault_play_${video.fileName}');
+      final exportDir = Directory(
+        path.join((await _exportRoot()).path, purpose, video.id),
+      );
+      await exportDir.create(recursive: true);
+      final exportPath = path.join(
+        exportDir.path,
+        path.basename(video.fileName),
+      );
       final exportFile = File(exportPath);
-
-      if (await exportFile.exists()) {
-        await exportFile.delete();
-      }
+      if (await exportFile.exists()) await exportFile.delete();
 
       final success = video.isEncrypted
-          ? await _decryptVideoToPath(
-              video,
-              exportPath,
-              onProgress: onProgress,
-            )
+          ? await _decryptVideoToPath(video, exportPath, onProgress: onProgress)
           : await _copyVideoToPath(
               sourcePath: video.hiddenPath,
               destinationPath: exportPath,
               onProgress: onProgress,
             );
-      if (!success) return null;
-
-      return exportPath;
+      return success ? exportPath : null;
     } catch (e) {
-      debugPrint('Error exporting video for playback: $e');
+      debugPrint('Error exporting vault video: $e');
       return null;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  /// Returns [desiredPath], or `name (1).ext`, `name (2).ext`, ... if taken.
+  @visibleForTesting
+  static Future<String> availablePath(String desiredPath) async {
+    if (!await File(desiredPath).exists()) return desiredPath;
+    final dir = path.dirname(desiredPath);
+    final base = path.basenameWithoutExtension(desiredPath);
+    final ext = path.extension(desiredPath);
+    for (var i = 1; i < 10000; i++) {
+      final candidate = path.join(dir, '$base ($i)$ext');
+      if (!await File(candidate).exists()) return candidate;
+    }
+    return path.join(dir, '${base}_${_generateVideoId()}$ext');
+  }
+
+  // Key derivation is deliberately slow, so run it off the UI isolate.
+  static Future<String> _hashSecret(String secret) =>
+      Isolate.run(() => PasswordHasher.hash(secret));
+
+  static Future<bool> _verifySecret(String secret, String encoded) {
+    if (encoded.isEmpty) return Future.value(false);
+    return Isolate.run(() => PasswordHasher.verify(secret, encoded));
+  }
+
+  static String _generateVideoId() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final suffix = List<String>.generate(
+      8,
+      (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    return '${timestamp}_$suffix';
+  }
+
+  static Future<Directory> _getVaultDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final vaultDir = Directory(
+      path.join(appDir.path, _isInFakeMode ? 'fake_vault' : 'main_vault'),
+    );
+    if (!await vaultDir.exists()) await vaultDir.create(recursive: true);
+    await _ensureNoMediaFile(vaultDir);
+    return vaultDir;
+  }
+
+  static Future<void> _createVaultDirectories() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    for (final name in ['main_vault', 'fake_vault']) {
+      final dir = Directory(path.join(appDir.path, name));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      await _ensureNoMediaFile(dir);
+    }
+  }
+
+  static Future<void> _ensureNoMediaFile(Directory dir) async {
+    try {
+      final noMedia = File(path.join(dir.path, '.nomedia'));
+      if (!await noMedia.exists()) await noMedia.writeAsString('');
+    } catch (e) {
+      debugPrint('Error creating .nomedia file: $e');
+    }
+  }
+
+  /// Decrypted exports (share sheet, legacy playback) live here and are
+  /// wiped by [cleanupPlaybackTempFiles].
+  static Future<Directory> _exportRoot() async => Directory(
+    path.join((await getTemporaryDirectory()).path, 'vault_export'),
+  );
+
+  static String get _videosPrefsKey =>
+      _isInFakeMode ? _fakeVideosKey : _mainVideosKey;
+
+  /// Reads the vault's video list, decrypting it when needed. Lists written
+  /// by older versions are plain JSON and are encrypted on the next write.
+  static Future<List<VaultVideo>> _getVaultVideos() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_videosPrefsKey);
+    if (raw == null || raw.isEmpty) return [];
+
+    String json;
+    if (raw.startsWith(_encryptedMetadataPrefix)) {
+      final dataKey = _dataKey;
+      if (dataKey == null) return [];
+      json = await VaultCrypto.openString(
+        raw.substring(_encryptedMetadataPrefix.length),
+        dataKey,
+      );
+    } else {
+      json = raw;
+    }
+    final list = jsonDecode(json) as List<dynamic>;
+    return list
+        .map((e) => VaultVideo.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<void> _saveVaultVideos(List<VaultVideo> videos) async {
+    final dataKey = _dataKey;
+    if (dataKey == null) throw StateError('Vault is locked');
+    final prefs = await SharedPreferences.getInstance();
+    final sealed = await VaultCrypto.sealString(
+      jsonEncode(videos.map((v) => v.toJson()).toList()),
+      dataKey,
+    );
+    await prefs.setString(_videosPrefsKey, '$_encryptedMetadataPrefix$sealed');
+  }
+
+  static Future<void> _updateVideos(
+    List<VaultVideo> Function(List<VaultVideo> videos) update,
+  ) async {
+    await _saveVaultVideos(update(await _getVaultVideos()));
   }
 
   static Future<bool> _decryptVideoToPath(
     VaultVideo video,
     String destinationPath, {
     ValueChanged<double>? onProgress,
-  }
-  ) async {
-    RandomAccessFile? hiddenRaf;
-    IOSink? destSink;
-    File? destFile;
-
+  }) async {
+    final dataKey = _dataKey;
+    if (dataKey == null) return false;
     try {
-      final hiddenFile = File(video.hiddenPath);
-      if (!await hiddenFile.exists()) return false;
-
-      final key = encrypt.Key.fromBase64(video.encryptionKey);
-      final encrypter = encrypt.Encrypter(encrypt.AES(key));
-
-      hiddenRaf = await hiddenFile.open(mode: FileMode.read);
-      final hiddenSize = await hiddenFile.length();
-
-      destFile = File(destinationPath);
-      final destDir = destFile.parent;
-      if (!await destDir.exists()) {
-        await destDir.create(recursive: true);
-      }
-      destSink = destFile.openWrite();
-
-      final output = AccumulatorSink<Digest>();
-      final checksumSink = sha256.startChunkedConversion(output);
-
-      int bytesProcessed = 0;
-      int bytesSinceYield = 0;
-
-      while (bytesProcessed < hiddenSize) {
-        if (hiddenSize - bytesProcessed < 20) break;
-
-        final ivBytes = await hiddenRaf.read(16);
-        final lenBytes = await hiddenRaf.read(4);
-
-        final encryptedLen = ByteData.view(
-          lenBytes.buffer,
-        ).getUint32(0, Endian.big);
-
-        final encryptedData = await hiddenRaf.read(encryptedLen);
-
-        final iv = encrypt.IV(ivBytes);
-        final decryptedBytes = encrypter.decryptBytes(
-          encrypt.Encrypted(encryptedData),
-          iv: iv,
-        );
-
-        destSink.add(decryptedBytes);
-        checksumSink.add(decryptedBytes);
-
-        bytesProcessed += 16 + 4 + encryptedLen;
-        bytesSinceYield += 16 + 4 + encryptedLen;
-
-        if (onProgress != null && hiddenSize > 0) {
-          onProgress(bytesProcessed / hiddenSize);
-        }
-
-        if (bytesSinceYield >= _yieldEveryBytes) {
-          bytesSinceYield = 0;
-          await Future.delayed(Duration.zero);
-        }
-      }
-
-      await destSink.flush();
-      await destSink.close();
-      await hiddenRaf.close();
-
-      checksumSink.close();
-      final calculatedChecksum = output.events.single.toString();
-
-      if (calculatedChecksum != video.checksum) {
-        debugPrint('Checksum mismatch! Video might be corrupted.');
-      }
-
+      await VaultCrypto.decryptFile(
+        File(video.hiddenPath),
+        File(destinationPath),
+        dataKey,
+        onProgress: onProgress,
+      );
       onProgress?.call(1.0);
       return true;
     } catch (e) {
-      debugPrint('Error decrypting video: $e');
-      try {
-        await destSink?.close();
-        await hiddenRaf?.close();
-        if (destFile != null && await destFile.exists()) {
-          await destFile.delete();
-        }
-      } catch (_) {
-        // ignore cleanup errors
-      }
+      debugPrint('Error decrypting vault video: $e');
       return false;
     }
   }
@@ -868,64 +1091,34 @@ class VaultService {
     required String destinationPath,
     ValueChanged<double>? onProgress,
   }) async {
-    RandomAccessFile? sourceRaf;
-    IOSink? destSink;
-    File? destFile;
-
+    final destFile = File(destinationPath);
+    RandomAccessFile? input;
+    RandomAccessFile? output;
     try {
       final sourceFile = File(sourcePath);
       if (!await sourceFile.exists()) return false;
+      final size = await sourceFile.length();
+      await destFile.parent.create(recursive: true);
+      input = await sourceFile.open();
+      output = await destFile.open(mode: FileMode.write);
 
-      final sourceSize = await sourceFile.length();
-      sourceRaf = await sourceFile.open(mode: FileMode.read);
-
-      destFile = File(destinationPath);
-      final destDir = destFile.parent;
-      if (!await destDir.exists()) {
-        await destDir.create(recursive: true);
+      var copied = 0;
+      while (copied < size) {
+        final chunk = await input.read(_copyChunkSize);
+        if (chunk.isEmpty) break;
+        await output.writeFrom(chunk);
+        copied += chunk.length;
+        if (size > 0) onProgress?.call(copied / size);
       }
-      destSink = destFile.openWrite();
-
-      int bytesRead = 0;
-      int bytesSinceYield = 0;
-
-      while (bytesRead < sourceSize) {
-        final remaining = sourceSize - bytesRead;
-        final toRead = remaining < _chunkSize ? remaining : _chunkSize;
-        final dataBytes = await sourceRaf.read(toRead);
-
-        destSink.add(dataBytes);
-
-        bytesRead += toRead;
-        bytesSinceYield += toRead;
-
-        if (onProgress != null && sourceSize > 0) {
-          onProgress(bytesRead / sourceSize);
-        }
-
-        if (bytesSinceYield >= _yieldEveryBytes) {
-          bytesSinceYield = 0;
-          await Future.delayed(Duration.zero);
-        }
-      }
-
-      await destSink.flush();
-      await destSink.close();
-      await sourceRaf.close();
-
+      await output.close();
+      await input.close();
       onProgress?.call(1.0);
       return true;
     } catch (e) {
       debugPrint('Error copying video: $e');
-      try {
-        await destSink?.close();
-        await sourceRaf?.close();
-        if (destFile != null && await destFile.exists()) {
-          await destFile.delete();
-        }
-      } catch (_) {
-        // ignore cleanup errors
-      }
+      await output?.close();
+      await input?.close();
+      if (await destFile.exists()) await destFile.delete();
       return false;
     }
   }
@@ -936,31 +1129,26 @@ class VaultService {
     ValueChanged<double>? onProgress,
   }) async {
     try {
-      final destFile = File(destinationPath);
-      final destDir = destFile.parent;
-      if (!await destDir.exists()) {
-        await destDir.create(recursive: true);
-      }
-
+      await File(destinationPath).parent.create(recursive: true);
       try {
         await sourceFile.rename(destinationPath);
         onProgress?.call(1.0);
         return true;
-      } catch (_) {
+      } on FileSystemException {
+        // Different volume: fall back to copy + delete.
         final copied = await _copyVideoToPath(
           sourcePath: sourceFile.path,
           destinationPath: destinationPath,
           onProgress: onProgress,
         );
         if (!copied) return false;
-
         try {
           await sourceFile.delete();
         } catch (_) {
-          // If we can't delete, treat as failure to avoid leaving duplicates
+          // Can't delete: treat as failure to avoid leaving duplicates.
+          await File(destinationPath).delete();
           return false;
         }
-
         return true;
       }
     } catch (e) {
@@ -969,21 +1157,18 @@ class VaultService {
     }
   }
 
+  /// Plain (legacy) vault files are stored with a `.vault` extension the
+  /// player can't sniff; rename (or copy) them to the original extension for
+  /// the duration of playback.
   static Future<VaultPlaybackHandle> prepareDirectPlayback(
     VaultVideo video,
   ) async {
     final hiddenFile = File(video.hiddenPath);
-    if (!await hiddenFile.exists()) {
-      return VaultPlaybackHandle(video.hiddenPath, video.hiddenPath);
-    }
-
     final extension = video.originalExtension.trim();
-    if (extension.isEmpty) {
-      return VaultPlaybackHandle(video.hiddenPath, video.hiddenPath);
-    }
-
     final currentExt = path.extension(video.hiddenPath).replaceFirst('.', '');
-    if (currentExt.toLowerCase() == extension.toLowerCase()) {
+    if (!await hiddenFile.exists() ||
+        extension.isEmpty ||
+        currentExt.toLowerCase() == extension.toLowerCase()) {
       return VaultPlaybackHandle(video.hiddenPath, video.hiddenPath);
     }
 
@@ -991,32 +1176,20 @@ class VaultService {
       hiddenFile.parent.path,
       '${video.id}.$extension',
     );
-    final tempPlaybackDir = Directory(
-      path.join(hiddenFile.parent.path, 'playback_temp'),
-    );
     try {
-      if (!await tempPlaybackDir.exists()) {
-        await tempPlaybackDir.create(recursive: true);
-      }
-      await _ensureNoMediaFile(tempPlaybackDir);
-    } catch (e) {
-      debugPrint('Error preparing playback temp directory: $e');
-    }
-    final tempPlaybackPath = path.join(
-      tempPlaybackDir.path,
-      '${video.id}.$extension',
-    );
-
-    try {
-      // Try to open for read to detect obvious locks before rename.
-      final raf = await hiddenFile.open(mode: FileMode.read);
-      await raf.close();
-      final renamedFile = await hiddenFile.rename(renamedPath);
-      return VaultPlaybackHandle(renamedFile.path, video.hiddenPath);
+      final renamed = await hiddenFile.rename(renamedPath);
+      return VaultPlaybackHandle(renamed.path, video.hiddenPath);
     } catch (e) {
       debugPrint('Error renaming vault file for playback: $e');
       try {
-        final copied = await hiddenFile.copy(tempPlaybackPath);
+        final tempDir = Directory(
+          path.join(hiddenFile.parent.path, 'playback_temp'),
+        );
+        await tempDir.create(recursive: true);
+        await _ensureNoMediaFile(tempDir);
+        final copied = await hiddenFile.copy(
+          path.join(tempDir.path, '${video.id}.$extension'),
+        );
         return VaultPlaybackHandle(
           copied.path,
           video.hiddenPath,
@@ -1050,24 +1223,35 @@ class VaultService {
     }
   }
 
+  /// Removes decrypted/copied files left behind by an interrupted session.
   static Future<void> cleanupPlaybackTempFiles() async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      final mainTempDir = Directory(
-        path.join(appDir.path, 'main_vault', 'playback_temp'),
-      );
-      final fakeTempDir = Directory(
-        path.join(appDir.path, 'fake_vault', 'playback_temp'),
-      );
-
-      for (final dir in [mainTempDir, fakeTempDir]) {
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
-        }
+      for (final name in ['main_vault', 'fake_vault']) {
+        final dir = Directory(path.join(appDir.path, name, 'playback_temp'));
+        if (await dir.exists()) await dir.delete(recursive: true);
       }
+      final exportRoot = await _exportRoot();
+      if (await exportRoot.exists()) await exportRoot.delete(recursive: true);
     } catch (e) {
       debugPrint('Error cleaning playback temp files: $e');
     }
+  }
+
+  @visibleForTesting
+  static String get plainHiddenExtension => _plainHiddenExtension;
+
+  /// Test hook: stores [videos] exactly as a pre-encryption version did.
+  @visibleForTesting
+  static Future<void> writeLegacyVideoList(
+    List<VaultVideo> videos, {
+    bool fake = false,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      fake ? _fakeVideosKey : _mainVideosKey,
+      jsonEncode(videos.map((v) => v.toJson()..remove('format')).toList()),
+    );
   }
 }
 

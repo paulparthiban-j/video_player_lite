@@ -267,10 +267,7 @@ class VideoScannerService {
     final totalPages = (total / pageSize).ceil();
 
     for (int page = 0; page < totalPages; page++) {
-      final assets = await path.getAssetListPaged(
-        page: page,
-        size: pageSize,
-      );
+      final assets = await path.getAssetListPaged(page: page, size: pageSize);
       for (final asset in assets) {
         final file = await asset.file;
         if (file == null) continue;

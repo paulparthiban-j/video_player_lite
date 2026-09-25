@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'about_screen.dart';
 import 'scan_directories_settings_screen.dart';
+import '../core/ui/responsive.dart';
 import '../services/theme_service.dart';
 import '../services/performance_service.dart';
 import '../services/settings_service.dart';
@@ -65,194 +66,200 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         backgroundColor: theme.scaffoldBackgroundColor,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Theme Section (Card Style)
-            _buildThemeSection(theme),
-            const SizedBox(height: 24),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          16 + MediaQuery.paddingOf(context).bottom,
+        ),
+        child: MaxWidthBox(
+          maxWidth: 720,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Theme Section (Card Style)
+              _buildThemeSection(theme),
+              const SizedBox(height: 24),
 
-            // Performance Settings (Functional)
-            SettingsSection(
-              title: 'Playback & Performance',
-              icon: Icons.speed_rounded,
-              children: [
-                _buildSwitchSetting(
-                  'Auto Performance Mode',
-                  'Enable frame drop only if playback lags',
-                  _autoPerformanceMode,
-                  (value) {
-                    setState(() => _autoPerformanceMode = value);
-                    PerformanceService.setAutoPerformanceMode(value);
-                    if (value) {
-                      setState(() {
-                        _frameDrop = false;
-                        _skipLoopFilter = false;
-                      });
-                      PerformanceService.setFrameDrop(false);
-                      PerformanceService.setSkipLoopFilter(false);
-                    }
-                  },
-                ),
-                _buildSwitchSetting(
-                  'Hardware Acceleration',
-                  'Use GPU for smooth video decoding',
-                  _hwDecoding,
-                  (value) {
-                    setState(() => _hwDecoding = value);
-                    PerformanceService.setHardwareDecoding(value);
-                  },
-                ),
-                _buildSwitchSetting(
-                  'Frame Drop',
-                  'Skip frames to prevent audio lag',
-                  _frameDrop,
-                  (value) {
-                    setState(() => _frameDrop = value);
-                    PerformanceService.setFrameDrop(value);
-                  },
-                ),
-                _buildSwitchSetting(
-                  'Speedup Mode (Skip Filter)',
-                  'Disable deblocking for max speed (Low quality)',
-                  _skipLoopFilter,
-                  (value) {
-                    setState(() => _skipLoopFilter = value);
-                    PerformanceService.setSkipLoopFilter(value);
-                  },
-                ),
-                _buildSwitchSetting(
-                  'HDR Tone Mapping (Experimental)',
-                  'Improve HDR videos on SDR screens',
-                  _hdrToneMap,
-                  (value) {
-                    setState(() => _hdrToneMap = value);
-                    PerformanceService.setHdrToneMapping(value);
-                  },
-                ),
-              ],
-            ),
+              // Performance Settings (Functional)
+              SettingsSection(
+                title: 'Playback & Performance',
+                icon: Icons.speed_rounded,
+                children: [
+                  _buildSwitchSetting(
+                    'Auto Performance Mode',
+                    'Enable frame drop only if playback lags',
+                    _autoPerformanceMode,
+                    (value) {
+                      setState(() => _autoPerformanceMode = value);
+                      PerformanceService.setAutoPerformanceMode(value);
+                      if (value) {
+                        setState(() {
+                          _frameDrop = false;
+                          _skipLoopFilter = false;
+                        });
+                        PerformanceService.setFrameDrop(false);
+                        PerformanceService.setSkipLoopFilter(false);
+                      }
+                    },
+                  ),
+                  _buildSwitchSetting(
+                    'Hardware Acceleration',
+                    'Use GPU for smooth video decoding',
+                    _hwDecoding,
+                    (value) {
+                      setState(() => _hwDecoding = value);
+                      PerformanceService.setHardwareDecoding(value);
+                    },
+                  ),
+                  _buildSwitchSetting(
+                    'Frame Drop',
+                    'Skip frames to prevent audio lag',
+                    _frameDrop,
+                    (value) {
+                      setState(() => _frameDrop = value);
+                      PerformanceService.setFrameDrop(value);
+                    },
+                  ),
+                  _buildSwitchSetting(
+                    'Speedup Mode (Skip Filter)',
+                    'Disable deblocking for max speed (Low quality)',
+                    _skipLoopFilter,
+                    (value) {
+                      setState(() => _skipLoopFilter = value);
+                      PerformanceService.setSkipLoopFilter(value);
+                    },
+                  ),
+                  _buildSwitchSetting(
+                    'HDR Tone Mapping (Experimental)',
+                    'Improve HDR videos on SDR screens',
+                    _hdrToneMap,
+                    (value) {
+                      setState(() => _hdrToneMap = value);
+                      PerformanceService.setHdrToneMapping(value);
+                    },
+                  ),
+                ],
+              ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            SettingsSection(
-              title: 'Gesture Controls',
-              icon: Icons.touch_app_rounded,
-              children: [
-                _buildSliderSetting(
-                  title: 'Double-tap seek',
-                  description: 'Skip seconds on double tap',
-                  value: _doubleTapSeekSeconds.toDouble(),
-                  min: 1,
-                  max: 60,
-                  divisions: 59,
-                  valueLabel: '${_doubleTapSeekSeconds}s',
-                  onChanged: (value) {
-                    final seconds = value.round();
-                    setState(() => _doubleTapSeekSeconds = seconds);
-                  },
-                  onChangeEnd: (value) {
-                    SettingsService.setDoubleTapSeekSeconds(
-                      value.round(),
-                    );
-                  },
-                ),
-                _buildSliderSetting(
-                  title: 'Hold forward speed',
-                  description: 'Speed for hold-forward',
-                  value: _holdForwardSpeed,
-                  min: 1.0,
-                  max: 4.0,
-                  divisions: 6,
-                  valueLabel: '${_holdForwardSpeed.toStringAsFixed(1)}x',
-                  onChanged: (value) {
-                    setState(() => _holdForwardSpeed = value);
-                  },
-                  onChangeEnd: (value) {
-                    SettingsService.setHoldForwardSpeed(value);
-                  },
-                ),
-                _buildSliderSetting(
-                  title: 'Hold rewind speed',
-                  description: 'Speed for hold-rewind',
-                  value: _holdRewindSpeed,
-                  min: 1.0,
-                  max: 4.0,
-                  divisions: 6,
-                  valueLabel: '${_holdRewindSpeed.toStringAsFixed(1)}x',
-                  onChanged: (value) {
-                    setState(() => _holdRewindSpeed = value);
-                  },
-                  onChangeEnd: (value) {
-                    SettingsService.setHoldRewindSpeed(value);
-                  },
-                ),
-              ],
-            ),
+              SettingsSection(
+                title: 'Gesture Controls',
+                icon: Icons.touch_app_rounded,
+                children: [
+                  _buildSliderSetting(
+                    title: 'Double-tap seek',
+                    description: 'Skip seconds on double tap',
+                    value: _doubleTapSeekSeconds.toDouble(),
+                    min: 1,
+                    max: 60,
+                    divisions: 59,
+                    valueLabel: '${_doubleTapSeekSeconds}s',
+                    onChanged: (value) {
+                      final seconds = value.round();
+                      setState(() => _doubleTapSeekSeconds = seconds);
+                    },
+                    onChangeEnd: (value) {
+                      SettingsService.setDoubleTapSeekSeconds(value.round());
+                    },
+                  ),
+                  _buildSliderSetting(
+                    title: 'Hold forward speed',
+                    description: 'Speed for hold-forward',
+                    value: _holdForwardSpeed,
+                    min: 1.0,
+                    max: 4.0,
+                    divisions: 6,
+                    valueLabel: '${_holdForwardSpeed.toStringAsFixed(1)}x',
+                    onChanged: (value) {
+                      setState(() => _holdForwardSpeed = value);
+                    },
+                    onChangeEnd: (value) {
+                      SettingsService.setHoldForwardSpeed(value);
+                    },
+                  ),
+                  _buildSliderSetting(
+                    title: 'Hold rewind speed',
+                    description: 'Speed for hold-rewind',
+                    value: _holdRewindSpeed,
+                    min: 1.0,
+                    max: 4.0,
+                    divisions: 6,
+                    valueLabel: '${_holdRewindSpeed.toStringAsFixed(1)}x',
+                    onChanged: (value) {
+                      setState(() => _holdRewindSpeed = value);
+                    },
+                    onChangeEnd: (value) {
+                      SettingsService.setHoldRewindSpeed(value);
+                    },
+                  ),
+                ],
+              ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // Advanced Navigation
-            SettingsSection(
-              title: 'Advanced Features',
-              icon: Icons.tune_rounded,
-              children: [
-                _buildNavigationSetting(
-                  'Scan Directories',
-                  'Manage folders for video scanning',
-                  Icons.folder_special,
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          const ScanDirectoriesSettingsScreen(),
+              // Advanced Navigation
+              SettingsSection(
+                title: 'Advanced Features',
+                icon: Icons.tune_rounded,
+                children: [
+                  _buildNavigationSetting(
+                    'Scan Directories',
+                    'Manage folders for video scanning',
+                    Icons.folder_special,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const ScanDirectoriesSettingsScreen(),
+                      ),
                     ),
                   ),
-                ),
-                _buildNavigationSetting(
-                  'File Browser',
-                  'Manage folders and view hidden files',
-                  Icons.folder_open_rounded,
-                  () => Navigator.of(context).pushNamed('/next-browser'),
-                ),
-                _buildSwitchSetting(
-                  'Skip Silence',
-                  'Automatically skip silent parts',
-                  _skipSilence,
-                  (value) => setState(() => _skipSilence = value),
-                ),
-              ],
-            ),
+                  _buildNavigationSetting(
+                    'File Browser',
+                    'Manage folders and view hidden files',
+                    Icons.folder_open_rounded,
+                    () => Navigator.of(context).pushNamed('/next-browser'),
+                  ),
+                  _buildSwitchSetting(
+                    'Skip Silence',
+                    'Automatically skip silent parts',
+                    _skipSilence,
+                    (value) => setState(() => _skipSilence = value),
+                  ),
+                ],
+              ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // Info Section
-            SettingsSection(
-              title: 'About',
-              icon: Icons.info_outline_rounded,
-              children: [
-                _buildNavigationSetting(
-                  'About Parthi Play',
-                  'Version 1.0.0 • Build 2024',
-                  Icons.android,
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AboutScreen(),
+              // Info Section
+              SettingsSection(
+                title: 'About',
+                icon: Icons.info_outline_rounded,
+                children: [
+                  _buildNavigationSetting(
+                    'About Parthi Play',
+                    'Version 1.0.0 • Build 2024',
+                    Icons.android,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AboutScreen(),
+                      ),
                     ),
                   ),
-                ),
-                _buildNavigationSetting(
-                  'Privacy Policy',
-                  'Local storage only. No tracking.',
-                  Icons.privacy_tip_outlined,
-                  () => _showPrivacyPolicy(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 50),
-          ],
+                  _buildNavigationSetting(
+                    'Privacy Policy',
+                    'Local storage only. No tracking.',
+                    Icons.privacy_tip_outlined,
+                    () => _showPrivacyPolicy(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 50),
+            ],
+          ),
         ),
       ),
     );
@@ -289,27 +296,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: const Icon(Icons.palette_rounded, color: Colors.purple),
               ),
               const SizedBox(width: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Appearance',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: theme.textTheme.bodyLarge?.color,
-                    ),
-                  ),
-                  Text(
-                    'Customize app look',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: theme.textTheme.bodyMedium?.color?.withValues(
-                        alpha: 0.6,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Appearance',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: theme.textTheme.bodyLarge?.color,
                       ),
                     ),
-                  ),
-                ],
+                    Text(
+                      'Customize app look',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: theme.textTheme.bodyMedium?.color?.withValues(
+                          alpha: 0.6,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -458,9 +467,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Text(
             description,
             style: TextStyle(
-              color: theme.textTheme.bodyMedium?.color?.withValues(
-                alpha: 0.7,
-              ),
+              color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
               fontSize: 13,
             ),
           ),

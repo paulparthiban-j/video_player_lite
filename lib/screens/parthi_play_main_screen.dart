@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +20,7 @@ import '../services/file_browser_service.dart';
 import '../services/theme_service.dart';
 import '../services/thumbnail_service.dart';
 import '../services/stream_sources_service.dart';
+import '../core/ui/responsive.dart';
 import '../core/video_player_controller.dart';
 import 'settings_screen.dart';
 
@@ -97,21 +99,26 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
   }
 
   void _initShareIntentHandling() {
-    _shareMediaSub =
-        ReceiveSharingIntent.instance.getMediaStream().listen((files) {
-      _handleSharedMedia(files);
-    }, onError: (e) {
-      debugPrint('Share intent stream error: $e');
-    });
-
-    ReceiveSharingIntent.instance.getInitialMedia().then((files) {
-      if (files.isNotEmpty) {
+    _shareMediaSub = ReceiveSharingIntent.instance.getMediaStream().listen(
+      (files) {
         _handleSharedMedia(files);
-      }
-      ReceiveSharingIntent.instance.reset();
-    }).catchError((e) {
-      debugPrint('Initial share intent error: $e');
-    });
+      },
+      onError: (e) {
+        debugPrint('Share intent stream error: $e');
+      },
+    );
+
+    ReceiveSharingIntent.instance
+        .getInitialMedia()
+        .then((files) {
+          if (files.isNotEmpty) {
+            _handleSharedMedia(files);
+          }
+          ReceiveSharingIntent.instance.reset();
+        })
+        .catchError((e) {
+          debugPrint('Initial share intent error: $e');
+        });
   }
 
   void _handleSharedMedia(List<SharedMediaFile> files) {
@@ -195,8 +202,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
         if (videos.isNotEmpty) {
           final now = DateTime.now();
           if (_lastScanSnackAt == null ||
-              now.difference(_lastScanSnackAt!) >
-                  const Duration(seconds: 8)) {
+              now.difference(_lastScanSnackAt!) > const Duration(seconds: 8)) {
             _showSuccessSnackBar('Found ${videos.length} files');
             _lastScanSnackAt = now;
           }
@@ -332,43 +338,24 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     }
   }
 
+  /// Recomputes [_filteredVideos]. Callers are expected to wrap this in
+  /// `setState`.
   void _applyFilter() {
-    setState(() {
-      if (_currentFilter == 'folders') {
-        // Show folders list
-        _filteredVideos = [];
-      } else if (_currentFilter == 'streaming') {
-        _filteredVideos = _streamVideos;
-      } else if (_currentFolderName != null) {
-        // Show videos from selected folder
-        _filteredVideos = _foldersMap[_currentFolderName] ?? [];
-      } else if (_currentFilter == null && _currentFolderName == null) {
-        // Only show video files
-        _filteredVideos = _localVideos
-            .where((v) => v.type == MediaType.video)
-            .toList();
-      } else if (_currentFilter != null) {
-        if (_currentFilter == 'videos') {
-          _filteredVideos = _localVideos
-              .where((v) => v.type == MediaType.video)
-              .toList();
-        } else {
-          // Default to videos only for any other filter
-          _filteredVideos = _localVideos
-              .where((v) => v.type == MediaType.video)
-              .toList();
-        }
-      } else {
-        // Default case - show videos only
-        _filteredVideos = _localVideos
-            .where((v) => v.type == MediaType.video)
-            .toList();
-      }
-    });
+    if (_currentFilter == 'folders') {
+      _filteredVideos = [];
+    } else if (_currentFilter == 'streaming') {
+      _filteredVideos = _streamVideos;
+    } else if (_currentFolderName != null) {
+      _filteredVideos = _foldersMap[_currentFolderName] ?? [];
+    } else {
+      _filteredVideos = _localVideos
+          .where((v) => v.type == MediaType.video)
+          .toList();
+    }
   }
 
-  void _onChipTap(String label) async {
-    HapticFeedback.lightImpact();
+  Future<void> _onChipTap(String label) async {
+    unawaited(HapticFeedback.lightImpact());
     if (label == 'Privacy') {
       final isSetup = await VaultService.isVaultSetup();
       if (!mounted) return;
@@ -376,11 +363,12 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
       return;
     }
     if (label == 'Streaming') {
-      _loadStreams();
+      unawaited(_loadStreams());
     }
     setState(() {
-      _currentFilter =
-          label.toLowerCase() == 'all' ? null : label.toLowerCase();
+      _currentFilter = label.toLowerCase() == 'all'
+          ? null
+          : label.toLowerCase();
       _currentFolderName = null;
       _applyFilter();
     });
@@ -420,8 +408,9 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
 
   bool _isValidStreamUrl(String input) {
     if (input.trim().isEmpty) return false;
-    final normalized =
-        input.contains('://') ? input.trim() : 'https://${input.trim()}';
+    final normalized = input.contains('://')
+        ? input.trim()
+        : 'https://${input.trim()}';
     final uri = Uri.tryParse(normalized);
     if (uri == null) return false;
     const allowedSchemes = ['http', 'https', 'rtsp', 'rtmp'];
@@ -438,10 +427,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     final current = prefs.getStringList(_recentUrlsKey) ?? [];
     final normalized = url.trim();
     if (normalized.isEmpty) return;
-    final updated = [
-      normalized,
-      ...current.where((u) => u != normalized),
-    ];
+    final updated = [normalized, ...current.where((u) => u != normalized)];
     await prefs.setStringList(
       _recentUrlsKey,
       updated.take(_maxRecentUrls).toList(),
@@ -464,145 +450,148 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     final recentUrls = await _getRecentUrls();
     if (!mounted) return;
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Play from URL'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: _urlController,
-              builder: (context, value, _) {
-                final isValid = _isValidStreamUrl(value.text);
-                return Column(
-                  children: [
-                    TextField(
-                      controller: _urlController,
-                      decoration: InputDecoration(
-                        hintText: 'Enter video or stream URL',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.content_paste),
-                          tooltip: 'Paste',
-                          onPressed: () async {
-                            final data = await Clipboard.getData('text/plain');
-                            final text = data?.text ?? '';
-                            if (text.trim().isEmpty) return;
-                            _urlController.text = text.trim();
-                          },
-                        ),
-                      ),
-                    ),
-                    if (value.text.trim().isNotEmpty && !isValid)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 6),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Enter a valid URL (http/https/rtsp/rtmp)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.red,
-                            ),
+    unawaited(
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Play from URL'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _urlController,
+                builder: (context, value, _) {
+                  final isValid = _isValidStreamUrl(value.text);
+                  return Column(
+                    children: [
+                      TextField(
+                        controller: _urlController,
+                        decoration: InputDecoration(
+                          hintText: 'Enter video or stream URL',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.content_paste),
+                            tooltip: 'Paste',
+                            onPressed: () async {
+                              final data = await Clipboard.getData(
+                                'text/plain',
+                              );
+                              final text = data?.text ?? '';
+                              if (text.trim().isEmpty) return;
+                              _urlController.text = text.trim();
+                            },
                           ),
                         ),
                       ),
-                  ],
-                );
-              },
-            ),
-            if (recentUrls.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Recent',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                      if (value.text.trim().isNotEmpty && !isValid)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Enter a valid URL (http/https/rtsp/rtmp)',
+                              style: TextStyle(fontSize: 12, color: Colors.red),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+              if (recentUrls.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Recent',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(
+                        dialogContext,
+                      ).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              SizedBox(
-                height: 160,
-                child: ListView.builder(
-                  itemCount: recentUrls.length,
-                  itemBuilder: (context, index) {
-                    final url = recentUrls[index];
-                    return ListTile(
-                      dense: true,
-                      title: Text(
-                        url,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () async {
-                          await _removeRecentUrl(url);
-                          if (!dialogContext.mounted) return;
-                          Navigator.pop(dialogContext);
-                          await _openUrlDialog();
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 160,
+                  child: ListView.builder(
+                    itemCount: recentUrls.length,
+                    itemBuilder: (context, index) {
+                      final url = recentUrls[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          url,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () async {
+                            await _removeRecentUrl(url);
+                            if (!dialogContext.mounted) return;
+                            Navigator.pop(dialogContext);
+                            await _openUrlDialog();
+                          },
+                        ),
+                        onTap: () {
+                          _urlController.text = url;
                         },
-                      ),
-                      onTap: () {
-                        _urlController.text = url;
-                      },
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
-        ),
-        actions: [
-          if (recentUrls.isNotEmpty)
+          ),
+          actions: [
+            if (recentUrls.isNotEmpty)
+              TextButton(
+                onPressed: () async {
+                  await _clearRecentUrls();
+                  if (!dialogContext.mounted) return;
+                  Navigator.pop(dialogContext);
+                  await _openUrlDialog();
+                },
+                child: const Text('Clear Recent'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
             TextButton(
               onPressed: () async {
-                await _clearRecentUrls();
+                var input = _urlController.text.trim();
+                if (input.isEmpty) {
+                  if (!mounted) return;
+                  _showErrorSnackBar('Enter a valid URL');
+                  return;
+                }
+
+                if (!_isValidStreamUrl(input)) {
+                  if (!mounted) return;
+                  _showErrorSnackBar('Enter a valid stream URL');
+                  return;
+                }
+
+                if (!input.contains('://')) {
+                  input = 'https://$input';
+                }
+
+                await _saveRecentUrl(input);
                 if (!dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
-                await _openUrlDialog();
+                if (!mounted) return;
+                setState(() {
+                  _videoUrl = input;
+                  _videoPath = null;
+                });
               },
-              child: const Text('Clear Recent'),
+              child: const Text('Play'),
             ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              var input = _urlController.text.trim();
-              if (input.isEmpty) {
-                if (!mounted) return;
-                _showErrorSnackBar('Enter a valid URL');
-                return;
-              }
-
-              if (!_isValidStreamUrl(input)) {
-                if (!mounted) return;
-                _showErrorSnackBar('Enter a valid stream URL');
-                return;
-              }
-
-              if (!input.contains('://')) {
-                input = 'https://$input';
-              }
-
-              await _saveRecentUrl(input);
-              if (!dialogContext.mounted) return;
-              Navigator.pop(dialogContext);
-              if (!mounted) return;
-              setState(() {
-                _videoUrl = input;
-                _videoPath = null;
-              });
-            },
-            child: const Text('Play'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -849,199 +838,207 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
       child: Scaffold(
         backgroundColor: theme == ThemeMode.dark
             ? const Color(0xFF0A0A0A)
-          : const Color(0xFFF5F5F7),
-      appBar: AppBar(
-        backgroundColor: theme == ThemeMode.dark
-            ? const Color(0xFF0A0A0A)
             : const Color(0xFFF5F5F7),
-        elevation: 0,
-        centerTitle: false,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.red.shade600, Colors.orange.shade600],
+        appBar: AppBar(
+          backgroundColor: theme == ThemeMode.dark
+              ? const Color(0xFF0A0A0A)
+              : const Color(0xFFF5F5F7),
+          elevation: 0,
+          centerTitle: false,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.red.shade600, Colors.orange.shade600],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.play_circle_filled,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                'PARTHI PLAY',
-                style: TextStyle(
-                  color: theme == ThemeMode.dark ? Colors.white : Colors.black,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Settings',
-            icon: Icon(
-              Icons.settings_outlined,
-              color: theme == ThemeMode.dark ? Colors.white70 : Colors.black54,
-            ),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SettingsScreen(),
-                ),
-              );
-            },
-          ),
-          PopupMenuButton<String>(
-            icon: Icon(
-              Icons.more_vert,
-              color: theme == ThemeMode.dark ? Colors.white54 : Colors.black54,
-            ),
-            onSelected: (value) {
-              switch (value) {
-                case 'theme':
-                  ref.read(themeModeProvider.notifier).toggleTheme();
-                  break;
-                case 'cast':
-                  break;
-                case 'url':
-                  _showUrlDialog();
-                  break;
-                case 'sort':
-                  _showSortOptions();
-                  break;
-                case 'settings':
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettingsScreen(),
-                    ),
-                  );
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'theme',
-                child: Row(
-                  children: [
-                    Icon(
-                      theme == ThemeMode.dark
-                          ? Icons.light_mode
-                          : Icons.dark_mode,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(theme == ThemeMode.dark ? 'Light Mode' : 'Dark Mode'),
-                  ],
+                child: const Icon(
+                  Icons.play_circle_filled,
+                  color: Colors.white,
+                  size: 24,
                 ),
               ),
-              PopupMenuItem(
-                value: 'cast',
-                child: const Row(
-                  children: [
-                    Icon(Icons.cast, size: 20),
-                    SizedBox(width: 12),
-                    Text('Cast'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'url',
-                child: const Row(
-                  children: [
-                    Icon(Icons.search, size: 20),
-                    SizedBox(width: 12),
-                    Text('Play URL'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'sort',
-                child: const Row(
-                  children: [
-                    Icon(Icons.sort, size: 20),
-                    SizedBox(width: 12),
-                    Text('Sort'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'settings',
-                child: const Row(
-                  children: [
-                    Icon(Icons.settings_outlined, size: 20),
-                    SizedBox(width: 12),
-                    Text('Settings'),
-                  ],
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  'PARTHI PLAY',
+                  style: TextStyle(
+                    color: theme == ThemeMode.dark
+                        ? Colors.white
+                        : Colors.black,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                _buildChip(
-                  'Videos',
-                  Icons.movie_outlined,
-                  Colors.red,
-                  () => _onChipTap('Videos'),
-                  isActive: _currentFilter == 'videos',
+          actions: [
+            IconButton(
+              tooltip: 'Settings',
+              icon: Icon(
+                Icons.settings_outlined,
+                color: theme == ThemeMode.dark
+                    ? Colors.white70
+                    : Colors.black54,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                );
+              },
+            ),
+            PopupMenuButton<String>(
+              icon: Icon(
+                Icons.more_vert,
+                color: theme == ThemeMode.dark
+                    ? Colors.white54
+                    : Colors.black54,
+              ),
+              onSelected: (value) {
+                switch (value) {
+                  case 'theme':
+                    ref.read(themeModeProvider.notifier).toggleTheme();
+                    break;
+                  case 'cast':
+                    break;
+                  case 'url':
+                    _showUrlDialog();
+                    break;
+                  case 'sort':
+                    _showSortOptions();
+                    break;
+                  case 'settings':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'theme',
+                  child: Row(
+                    children: [
+                      Icon(
+                        theme == ThemeMode.dark
+                            ? Icons.light_mode
+                            : Icons.dark_mode,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        theme == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+                      ),
+                    ],
+                  ),
                 ),
-                _buildChip(
-                  'Folders',
-                  Icons.folder_outlined,
-                  Colors.orange,
-                  () => _onChipTap('Folders'),
-                  isActive: _currentFilter == 'folders',
+                PopupMenuItem(
+                  value: 'cast',
+                  child: const Row(
+                    children: [
+                      Icon(Icons.cast, size: 20),
+                      SizedBox(width: 12),
+                      Text('Cast'),
+                    ],
+                  ),
                 ),
-                _buildChip(
-                  'Streaming',
-                  Icons.sensors,
-                  Colors.purple,
-                  () => _onChipTap('Streaming'),
-                  isActive: _currentFilter == 'streaming',
+                PopupMenuItem(
+                  value: 'url',
+                  child: const Row(
+                    children: [
+                      Icon(Icons.search, size: 20),
+                      SizedBox(width: 12),
+                      Text('Play URL'),
+                    ],
+                  ),
                 ),
-                _buildChip(
-                  'Privacy',
-                  Icons.lock_outline,
-                  Colors.blue,
-                  () => _onChipTap('Privacy'),
+                PopupMenuItem(
+                  value: 'sort',
+                  child: const Row(
+                    children: [
+                      Icon(Icons.sort, size: 20),
+                      SizedBox(width: 12),
+                      Text('Sort'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'settings',
+                  child: const Row(
+                    children: [
+                      Icon(Icons.settings_outlined, size: 20),
+                      SizedBox(width: 12),
+                      Text('Settings'),
+                    ],
+                  ),
                 ),
               ],
             ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(60),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  _buildChip(
+                    'Videos',
+                    Icons.movie_outlined,
+                    Colors.red,
+                    () => _onChipTap('Videos'),
+                    isActive: _currentFilter == 'videos',
+                  ),
+                  _buildChip(
+                    'Folders',
+                    Icons.folder_outlined,
+                    Colors.orange,
+                    () => _onChipTap('Folders'),
+                    isActive: _currentFilter == 'folders',
+                  ),
+                  _buildChip(
+                    'Streaming',
+                    Icons.sensors,
+                    Colors.purple,
+                    () => _onChipTap('Streaming'),
+                    isActive: _currentFilter == 'streaming',
+                  ),
+                  _buildChip(
+                    'Privacy',
+                    Icons.lock_outline,
+                    Colors.blue,
+                    () => _onChipTap('Privacy'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
+        body: RefreshIndicator(
+          onRefresh: () async {
+            if (_currentFilter == 'streaming') {
+              await _loadStreams(showError: true);
+            } else {
+              await _scanVideos(background: false);
+            }
+          },
+          color: Colors.red.shade600,
+          child: _buildContent(),
+        ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          if (_currentFilter == 'streaming') {
-            await _loadStreams(showError: true);
-          } else {
-            await _scanVideos(background: false);
-          }
-        },
-        color: Colors.red.shade600,
-        child: _buildContent(),
-      ),
-    ),
     );
   }
 
@@ -1049,62 +1046,60 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     final nameController = TextEditingController();
     final urlController = TextEditingController();
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add Stream'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Stream name',
-                border: OutlineInputBorder(),
+    unawaited(
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Add Stream'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Stream name',
+                  border: OutlineInputBorder(),
+                ),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: urlController,
+                decoration: const InputDecoration(
+                  labelText: 'Stream URL (HLS)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: urlController,
-              decoration: const InputDecoration(
-                labelText: 'Stream URL (HLS)',
-                border: OutlineInputBorder(),
-              ),
+            TextButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                final url = urlController.text.trim();
+                final uri = Uri.tryParse(url);
+                if (name.isEmpty || uri == null || !uri.hasScheme) {
+                  if (!mounted) return;
+                  _showErrorSnackBar('Enter a valid name and URL');
+                  return;
+                }
+
+                await StreamSourcesService.addCustomStream(
+                  StreamSource(title: name, url: url, isLive: true),
+                );
+                if (!dialogContext.mounted) return;
+                Navigator.of(dialogContext).pop();
+                if (!mounted) return;
+                await _loadStreams();
+                _showSuccessSnackBar('Stream added');
+              },
+              child: const Text('Add'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final url = urlController.text.trim();
-              final uri = Uri.tryParse(url);
-              if (name.isEmpty || uri == null || !uri.hasScheme) {
-                if (!mounted) return;
-                _showErrorSnackBar('Enter a valid name and URL');
-                return;
-              }
-
-              await StreamSourcesService.addCustomStream(
-                StreamSource(
-                  title: name,
-                  url: url,
-                  isLive: true,
-                ),
-              );
-              if (!dialogContext.mounted) return;
-              Navigator.of(dialogContext).pop();
-              if (!mounted) return;
-              await _loadStreams();
-              _showSuccessSnackBar('Stream added');
-            },
-            child: const Text('Add'),
-          ),
-        ],
       ),
     );
   }
@@ -1125,13 +1120,15 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
       _showErrorSnackBar('No videos to generate thumbnails');
       return;
     }
-    ThumbnailService.generateThumbnailsBatch(paths).then((_) {
-      if (mounted) {
-        setState(() {});
-      }
-    }).catchError((e) {
-      debugPrint('Error generating thumbnails: $e');
-    });
+    ThumbnailService.generateThumbnailsBatch(paths)
+        .then((_) {
+          if (mounted) {
+            setState(() {});
+          }
+        })
+        .catchError((e) {
+          debugPrint('Error generating thumbnails: $e');
+        });
     _showSuccessSnackBar('Generating thumbnails...');
   }
 
@@ -1155,165 +1152,183 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     }
 
     if (displayVideos.isEmpty) {
-      return Center(
-        child: SingleChildScrollView(
+      // Always scrollable so pull-to-refresh works on the empty state.
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 800),
-                curve: Curves.easeOut,
-                builder: (context, value, child) {
-                  return Transform.scale(
-                    scale: value,
-                    child: Opacity(
-                      opacity: value,
-                      child: Container(
-                        padding: const EdgeInsets.all(32),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: isDark
-                                ? [
-                                    const Color(0xFF1A1A1A),
-                                    const Color(0xFF2A2A2A),
-                                  ]
-                                : [Colors.white, Colors.grey[50]!],
-                          ),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(
-                                alpha: isDark ? 0.3 : 0.1,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: math.max(0, constraints.maxHeight - 64),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 800),
+                    curve: Curves.easeOut,
+                    builder: (context, value, child) {
+                      return Transform.scale(
+                        scale: value,
+                        child: Opacity(
+                          opacity: value,
+                          child: Container(
+                            padding: const EdgeInsets.all(32),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: isDark
+                                    ? [
+                                        const Color(0xFF1A1A1A),
+                                        const Color(0xFF2A2A2A),
+                                      ]
+                                    : [Colors.white, Colors.grey[50]!],
                               ),
-                              blurRadius: 30,
-                              offset: const Offset(0, 15),
-                              spreadRadius: 5,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: isDark ? 0.3 : 0.1,
+                                  ),
+                                  blurRadius: 30,
+                                  offset: const Offset(0, 15),
+                                  spreadRadius: 5,
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.movie_outlined,
-                          size: 64,
-                          color: isDark ? Colors.grey[300] : Colors.grey[700],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 40),
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 600),
-                curve: Curves.easeOut,
-                builder: (context, value, child) {
-                  return Opacity(
-                    opacity: value,
-                    child: Transform.translate(
-                      offset: Offset(0, 20 * (1 - value)),
-                      child: child,
-                    ),
-                  );
-                },
-                child: Column(
-                  children: [
-                    Text(
-                      'No videos found',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black87,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Pull down to scan for videos',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'or check your storage permissions',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.grey[500] : Colors.grey[500],
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.red.shade600, Colors.orange.shade600],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.red.withValues(alpha: 0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
+                            child: Icon(
+                              Icons.movie_outlined,
+                              size: 64,
+                              color: isDark
+                                  ? Colors.grey[300]
+                                  : Colors.grey[700],
+                            ),
                           ),
-                        ],
-                      ),
-                      child: ElevatedButton.icon(
-                        onPressed: () => _scanVideos(background: false),
-                        icon: const Icon(Icons.refresh, color: Colors.white),
-                        label: const Text(
-                          'Scan Videos',
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 40),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeOut,
+                    builder: (context, value, child) {
+                      return Opacity(
+                        opacity: value,
+                        child: Transform.translate(
+                          offset: Offset(0, 20 * (1 - value)),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Column(
+                      children: [
+                        Text(
+                          'No videos found',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Pull down to scan for videos',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
                             fontSize: 16,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            height: 1.5,
                           ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 32,
-                            vertical: 16,
+                        const SizedBox(height: 8),
+                        Text(
+                          'or check your storage permissions',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.grey[500] : Colors.grey[500],
                           ),
-                          shape: RoundedRectangleBorder(
+                        ),
+                        const SizedBox(height: 40),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.red.shade600,
+                                Colors.orange.shade600,
+                              ],
+                            ),
                             borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withValues(alpha: 0.4),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton.icon(
+                            onPressed: () => _scanVideos(background: false),
+                            icon: const Icon(
+                              Icons.refresh,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              'Scan Videos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 32,
+                                vertical: 16,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _showUrlDialog,
+                          icon: const Icon(Icons.link),
+                          label: const Text('Play URL'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: isDark
+                                ? Colors.white
+                                : Colors.black87,
+                            side: BorderSide(
+                              color: isDark
+                                  ? Colors.white54
+                                  : Colors.grey.shade400,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _showUrlDialog,
-                      icon: const Icon(Icons.link),
-                      label: const Text('Play URL'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor:
-                            isDark ? Colors.white : Colors.black87,
-                        side: BorderSide(
-                          color: isDark
-                              ? Colors.white54
-                              : Colors.grey.shade400,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       );
@@ -1329,6 +1344,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
         return false;
       },
       child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           if (_localVideos.isNotEmpty)
             SliverToBoxAdapter(
@@ -1342,34 +1358,53 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
                       size: 20,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      '${displayVideos.length} ${displayVideos.length == 1 ? 'video' : 'videos'}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    Expanded(
+                      child: Text(
+                        '${displayVideos.length} ${displayVideos.length == 1 ? 'video' : 'videos'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
                       ),
                     ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => _generateVisibleThumbnails(displayVideos),
-                      icon: const Icon(Icons.image_outlined, size: 18),
-                      label: const Text('Thumbnails'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.red.shade600,
+                    // Collapse to an icon on narrow screens or large text.
+                    if (MediaQuery.sizeOf(context).width < 400 ||
+                        MediaQuery.textScalerOf(context).scale(1) > 1.15)
+                      IconButton(
+                        tooltip: 'Generate thumbnails',
+                        onPressed: () =>
+                            _generateVisibleThumbnails(displayVideos),
+                        icon: const Icon(Icons.image_outlined),
+                        color: Colors.red.shade600,
+                      )
+                    else
+                      TextButton.icon(
+                        onPressed: () =>
+                            _generateVisibleThumbnails(displayVideos),
+                        icon: const Icon(Icons.image_outlined, size: 18),
+                        label: const Text('Thumbnails'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red.shade600,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final video = displayVideos[index];
-                return _buildVideoListItem(video);
-              }, childCount: displayVideos.length),
+            padding: EdgeInsets.fromLTRB(
+              context.pagePadding,
+              0,
+              context.pagePadding,
+              16 + MediaQuery.paddingOf(context).bottom,
+            ),
+            sliver: SliverAdaptiveList(
+              itemCount: displayVideos.length,
+              itemBuilder: (context, index) =>
+                  _buildVideoListItem(displayVideos[index]),
             ),
           ),
         ],
@@ -1382,9 +1417,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     final isDark = theme == ThemeMode.dark;
 
     if (_isLoadingStreams) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (displayVideos.isEmpty) {
@@ -1448,6 +1481,8 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
         return false;
       },
       child: CustomScrollView(
+        // Keeps compatibility with Flutter versions before ScrollCacheExtent.
+        // ignore: deprecated_member_use
         cacheExtent: 800,
         slivers: [
           SliverToBoxAdapter(
@@ -1483,12 +1518,16 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final video = displayVideos[index];
-                return _buildVideoListItem(video);
-              }, childCount: displayVideos.length),
+            padding: EdgeInsets.fromLTRB(
+              context.pagePadding,
+              0,
+              context.pagePadding,
+              16 + MediaQuery.paddingOf(context).bottom,
+            ),
+            sliver: SliverAdaptiveList(
+              itemCount: displayVideos.length,
+              itemBuilder: (context, index) =>
+                  _buildVideoListItem(displayVideos[index]),
             ),
           ),
         ],
@@ -1758,11 +1797,11 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
                     ],
                   ),
                 ),
-                    PopupMenuButton<String>(
-                      icon: Icon(
-                        Icons.more_vert,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                      ),
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_vert,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  ),
                   onSelected: (value) async {
                     switch (value) {
                       case 'play':
@@ -1784,7 +1823,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
                           );
                           _showSuccessSnackBar('Link copied');
                         } else {
-                          _shareVideo(video);
+                          await _shareVideo(video);
                         }
                         break;
                     }
@@ -1862,39 +1901,41 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
   }
 
   void _showVideoInfo(VideoFile video) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(video.name),
-        content: SizedBox(
-          width: MediaQuery.of(context).size.width * 0.8,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Path: ${video.path}'),
-              const SizedBox(height: 8),
-              Text('Size: ${video.formattedSize}'),
-              const SizedBox(height: 8),
-              Text('Type: ${video.type.name}'),
-              const SizedBox(height: 8),
-              Text('Format: ${video.format}'),
-              const SizedBox(height: 8),
-              Text('Modified: ${video.lastModified}'),
-            ],
+    unawaited(
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(video.name),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.8,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Path: ${video.path}'),
+                const SizedBox(height: 8),
+                Text('Size: ${video.formattedSize}'),
+                const SizedBox(height: 8),
+                Text('Type: ${video.type.name}'),
+                const SizedBox(height: 8),
+                Text('Format: ${video.format}'),
+                const SizedBox(height: 8),
+                Text('Modified: ${video.lastModified}'),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }
 
-  void _shareVideo(VideoFile video) async {
+  Future<void> _shareVideo(VideoFile video) async {
     try {
       final shareFile = await ShareService.prepareShareFile(video.path);
       if (!mounted) return;
@@ -1916,10 +1957,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     } on ShareException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.orange,
-          ),
+          SnackBar(content: Text(e.message), backgroundColor: Colors.orange),
         );
       }
     } catch (e) {
@@ -1976,8 +2014,8 @@ class _VideoThumbnailWidgetState extends State<_VideoThumbnailWidget> {
         }
       }
       if (mounted) {
-        ThumbnailService.generateThumbnailsBatch([widget.videoPath]);
-        _retryLoadThumbnail();
+        unawaited(ThumbnailService.generateThumbnailsBatch([widget.videoPath]));
+        unawaited(_retryLoadThumbnail());
       }
     } else {
       if (!mounted) return;

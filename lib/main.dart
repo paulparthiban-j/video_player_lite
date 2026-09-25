@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:flutter/services.dart';
+import 'core/app/error_reporting.dart';
+import 'core/theme/app_theme.dart';
+import 'core/ui/responsive.dart';
 import 'services/theme_service.dart';
+import 'services/vault_auto_lock.dart';
 import 'services/vault_service.dart';
 import 'screens/parthi_play_main_screen.dart';
 import 'screens/launch_screen.dart';
@@ -14,26 +19,24 @@ import 'screens/vault_security_setup_screen.dart';
 import 'screens/file_browser_screen.dart';
 import 'screens/next_file_browser_screen.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  ErrorReporting.runGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    ErrorReporting.install();
 
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+    await AppOrientation.applyBrowsing();
 
-  try {
-    // MediaKit.ensureInitialized() is synchronous, wrap in try-catch
-    MediaKit.ensureInitialized();
-    debugPrint('MediaKit initialized successfully');
-  } catch (e) {
-    debugPrint('MediaKit initialization failed: $e');
-  }
+    try {
+      MediaKit.ensureInitialized();
+    } catch (e, stack) {
+      ErrorReporting.report(e, stack, context: 'media_kit init');
+    }
 
-  // Cleanup any lingering vault playback temp files on app start.
-  VaultService.cleanupPlaybackTempFiles();
+    // Remove any vault playback copies left behind by a previous session.
+    unawaited(VaultService.cleanupPlaybackTempFiles());
 
-  runApp(const ProviderScope(child: ParthiPlayApp()));
+    runApp(const ProviderScope(child: ParthiPlayApp()));
+  });
 }
 
 class ParthiPlayApp extends ConsumerStatefulWidget {
@@ -45,6 +48,7 @@ class ParthiPlayApp extends ConsumerStatefulWidget {
 
 class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
     with WidgetsBindingObserver {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   DateTime? _lastVaultCleanupAt;
   static const Duration _vaultCleanupCooldown = Duration(minutes: 30);
 
@@ -52,6 +56,7 @@ class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    VaultAutoLock.navigatorKey = _navigatorKey;
   }
 
   @override
@@ -62,11 +67,12 @@ class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    unawaited(VaultAutoLock.handleLifecycle(state));
     if (state == AppLifecycleState.resumed) {
       final now = DateTime.now();
       if (_lastVaultCleanupAt == null ||
           now.difference(_lastVaultCleanupAt!) > _vaultCleanupCooldown) {
-        VaultService.cleanupPlaybackTempFiles();
+        unawaited(VaultService.cleanupPlaybackTempFiles());
         _lastVaultCleanupAt = now;
       }
     }
@@ -77,89 +83,12 @@ class _ParthiPlayAppState extends ConsumerState<ParthiPlayApp>
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Parthi Play',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
-      theme: ThemeData(
-        brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.red,
-          brightness: Brightness.light,
-          primary: Colors.red.shade600,
-          secondary: Colors.orange.shade600,
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF8F9FA),
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          foregroundColor: Colors.black87,
-          centerTitle: false,
-          titleTextStyle: const TextStyle(
-            color: Colors.black87,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-          iconTheme: const IconThemeData(color: Colors.black87),
-        ),
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        ),
-        dividerColor: Colors.grey[300],
-        useMaterial3: true,
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          },
-        ),
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.red,
-          brightness: Brightness.dark,
-          primary: Colors.red.shade600,
-          secondary: Colors.orange.shade600,
-          surface: const Color(0xFF1A1A1A),
-          onSurface: Colors.white,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF0A0A0A),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0A0A0A),
-          elevation: 0,
-          foregroundColor: Colors.white,
-          centerTitle: false,
-          titleTextStyle: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-          iconTheme: IconThemeData(color: Colors.white),
-        ),
-        cardTheme: CardThemeData(
-          color: const Color(0xFF1A1A1A),
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        ),
-        dividerColor: const Color(0xFF2A2A2A),
-        useMaterial3: true,
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          },
-        ),
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
       initialRoute: '/',
       routes: {
         '/': (context) => const LaunchScreen(),

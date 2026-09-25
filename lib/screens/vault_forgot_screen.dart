@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../core/ui/responsive.dart';
 import '../services/vault_service.dart';
 
 class VaultForgotScreen extends StatefulWidget {
@@ -14,6 +17,11 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
   List<FocusNode> _answerFocusNodes = [];
   List<String> _questions = [];
   List<bool> _answerVisibility = [];
+  final TextEditingController _newPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+  bool _newPasswordVisible = false;
+  bool _loadingQuestions = true;
 
   bool _isLoading = false;
   bool _showError = false;
@@ -27,6 +35,8 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
 
   @override
   void dispose() {
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     for (final controller in _answerControllers) {
       controller.dispose();
     }
@@ -39,6 +49,7 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
   Future<void> _loadSecurityQuestions() async {
     final questions = await VaultService.getSecurityQuestions();
     if (!mounted) return;
+    _loadingQuestions = false;
     if (questions != null && questions.isNotEmpty) {
       setState(() {
         _questions = questions;
@@ -53,14 +64,35 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
         _answerVisibility = List.generate(questions.length, (index) => false);
       });
     } else {
-      // No security questions set up
-      Navigator.of(context).pushReplacementNamed('/vault-security-setup');
+      // Nothing to recover with; the empty-state UI explains the options.
+      setState(() {});
     }
   }
 
   Future<void> _resetPassword() async {
-    if (_answerControllers.any((controller) => controller.text.isEmpty)) {
+    if (_answerControllers.any((c) => c.text.trim().isEmpty)) {
       _showErrorMessage('Please answer all security questions');
+      return;
+    }
+    final newPassword = _newPasswordController.text;
+    if (newPassword.length < VaultService.minPasswordLength) {
+      _showErrorMessage(
+        'New password must be at least '
+        '${VaultService.minPasswordLength} characters',
+      );
+      return;
+    }
+    if (newPassword != _confirmPasswordController.text) {
+      _showErrorMessage('Passwords do not match');
+      return;
+    }
+
+    final lockout = await VaultService.getLockoutRemaining();
+    if (!mounted) return;
+    if (lockout > Duration.zero) {
+      _showErrorMessage(
+        'Too many attempts. Try again in ${(lockout.inSeconds / 60).ceil()} min.',
+      );
       return;
     }
 
@@ -69,28 +101,25 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
       _showError = false;
     });
 
-    HapticFeedback.mediumImpact();
+    unawaited(HapticFeedback.mediumImpact());
 
-    final answers = _answerControllers
-        .map((controller) => controller.text)
-        .toList();
+    final answers = _answerControllers.map((c) => c.text).toList();
     final success = await VaultService.resetPasswordWithSecurity(
-      'private123',
+      newPassword,
       answers,
     );
+    if (!mounted) return;
 
     if (success) {
-      HapticFeedback.heavyImpact();
-
-      if (!mounted) return;
-      showDialog(
+      unawaited(HapticFeedback.heavyImpact());
+      await showDialog<void>(
         context: context,
-        builder: (context) => AlertDialog(
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
           title: const Text('Password Reset'),
           content: const Text(
-            'Your Main Password has been reset to: private123\n'
-            'Your Decoy Password has been reset to: decoy123\n\n'
-            'Please change these immediately after logging in.',
+            'Your main password has been updated. '
+            'Your decoy password is unchanged.',
           ),
           backgroundColor: Colors.grey.shade900,
           titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18),
@@ -100,24 +129,23 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(
-                  context,
-                ).pushReplacementNamed('/vault-auth'); // Go to login
-              },
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('OK', style: TextStyle(color: Colors.red)),
             ),
           ],
         ),
       );
+      if (!mounted) return;
+      unawaited(Navigator.of(context).pushReplacementNamed('/vault-auth'));
     } else {
-      HapticFeedback.lightImpact();
+      unawaited(HapticFeedback.lightImpact());
 
       setState(() {
         _isLoading = false;
         _showError = true;
-        _errorMessage = 'Incorrect answers to security questions';
+        _errorMessage =
+            'Incorrect answers, or the new password matches your decoy '
+            'password';
       });
     }
   }
@@ -128,11 +156,58 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
       _errorMessage = message;
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
+  }
+
+  Widget _buildPasswordField({
+    required TextEditingController controller,
+    required String hint,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade900.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade700),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: !_newPasswordVisible,
+        autocorrect: false,
+        enableSuggestions: false,
+        onSubmitted: onSubmitted,
+        style: const TextStyle(color: Colors.white, fontSize: 16),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey.shade500),
+          prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey),
+          suffixIcon: IconButton(
+            tooltip: _newPasswordVisible ? 'Hide password' : 'Show password',
+            onPressed: () =>
+                setState(() => _newPasswordVisible = !_newPasswordVisible),
+            icon: Icon(
+              _newPasswordVisible ? Icons.visibility_off : Icons.visibility,
+              color: Colors.grey,
+            ),
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 16,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_loadingQuestions) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (_questions.isEmpty) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -152,21 +227,20 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Security questions are not set up yet',
+                'Recovery questions were never set up.\n'
+                'Unlock the vault to add them, or format the vault\n'
+                'from the login screen.',
+                textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
               ),
               const SizedBox(height: 30),
               ElevatedButton(
-                onPressed: () {
-                  Navigator.of(
-                    context,
-                  ).pushReplacementNamed('/vault-security-setup');
-                },
+                onPressed: () => Navigator.of(context).pop(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.shade700,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Set Up Security Questions'),
+                child: const Text('Back to Login'),
               ),
             ],
           ),
@@ -200,180 +274,197 @@ class _VaultForgotScreenState extends State<VaultForgotScreen> {
         child: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                const SizedBox(height: 20),
+            child: MaxWidthBox(
+              maxWidth: 520,
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
 
-                Icon(Icons.lock_reset, size: 80, color: Colors.red.shade700),
+                  Icon(Icons.lock_reset, size: 80, color: Colors.red.shade700),
 
-                const SizedBox(height: 30),
+                  const SizedBox(height: 30),
 
-                const Text(
-                  'Answer Security Questions',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                  const Text(
+                    'Answer Security Questions',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                Text(
-                  'Answer all questions correctly to reset your password',
-                  style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
-                  textAlign: TextAlign.center,
-                ),
+                  Text(
+                    'Answer all questions correctly, then choose a new main password',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
 
-                const SizedBox(height: 40),
+                  const SizedBox(height: 40),
 
-                // Security Questions
-                ...List.generate(_questions.length, (index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade900.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.shade700,
-                          width: 1,
+                  // Security Questions
+                  ...List.generate(_questions.length, (index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade900.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.grey.shade700,
+                            width: 1,
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Question ${index + 1}: ${_questions[index]}',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                'Question ${index + 1}: ${_questions[index]}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            TextField(
+                              controller: _answerControllers[index],
+                              focusNode: _answerFocusNodes[index],
+                              obscureText: !_answerVisibility[index],
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
-                                fontWeight: FontWeight.w500,
                               ),
-                            ),
-                          ),
-                          TextField(
-                            controller: _answerControllers[index],
-                            focusNode: _answerFocusNodes[index],
-                            obscureText: !_answerVisibility[index],
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: 'Enter your answer',
-                              hintStyle: TextStyle(color: Colors.grey.shade500),
-                              prefixIcon: const Icon(
-                                Icons.question_answer,
-                                color: Colors.grey,
-                              ),
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _answerVisibility[index] =
-                                        !_answerVisibility[index];
-                                  });
-                                  HapticFeedback.lightImpact();
-                                },
-                                icon: Icon(
-                                  _answerVisibility[index]
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
+                              decoration: InputDecoration(
+                                hintText: 'Enter your answer',
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade500,
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.question_answer,
                                   color: Colors.grey,
                                 ),
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _answerVisibility[index] =
+                                          !_answerVisibility[index];
+                                    });
+                                    unawaited(HapticFeedback.lightImpact());
+                                  },
+                                  icon: Icon(
+                                    _answerVisibility[index]
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 16,
+                                ),
                               ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 16,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+
+                  _buildPasswordField(
+                    controller: _newPasswordController,
+                    hint: 'New main password',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildPasswordField(
+                    controller: _confirmPasswordController,
+                    hint: 'Confirm new password',
+                    onSubmitted: (_) => _isLoading ? null : _resetPassword(),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Error Message
+                  if (_showError)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade900.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.red.shade600.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            color: Colors.red.shade400,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage,
+                              style: TextStyle(
+                                color: Colors.red.shade400,
+                                fontSize: 14,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  );
-                }),
 
-                // Error Message
-                if (_showError)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    margin: const EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade900.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.red.shade600.withValues(alpha: 0.5),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: Colors.red.shade400,
-                          size: 20,
+                  // Reset Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _resetPassword,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade700,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _errorMessage,
-                            style: TextStyle(
-                              color: Colors.red.shade400,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                // Reset Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _resetPassword,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        elevation: 0,
                       ),
-                      elevation: 0,
-                    ),
-                    child: _isLoading
-                        ? const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
+                      child: _isLoading
+                          ? const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
                                   ),
                                 ),
+                                SizedBox(width: 12),
+                                Text('Verifying...'),
+                              ],
+                            )
+                          : const Text(
+                              'Reset Password',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
                               ),
-                              SizedBox(width: 12),
-                              Text('Verifying...'),
-                            ],
-                          )
-                        : const Text(
-                            'Reset Password',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 20),
-              ],
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
           ),
         ),

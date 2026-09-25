@@ -2,7 +2,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
 class SystemControlsService {
-  static const MethodChannel _channel = MethodChannel('next_player/system_controls');
+  static const MethodChannel _channel = MethodChannel(
+    'next_player/system_controls',
+  );
   static double _currentBrightness = 0.5;
   static double _currentVolume = 0.5;
   static bool _isInitialized = false;
@@ -104,6 +106,16 @@ class SystemControlsService {
     } catch (e) {
       debugPrint('Error checking system controls support: $e');
       return false;
+    }
+  }
+
+  /// Marks the window secure (no screenshots, recordings or recent-apps
+  /// preview) on Android. No-op elsewhere.
+  static Future<void> setSecure(bool secure) async {
+    try {
+      await _channel.invokeMethod('setSecure', {'secure': secure});
+    } catch (e) {
+      debugPrint('Error setting secure window: $e');
     }
   }
 

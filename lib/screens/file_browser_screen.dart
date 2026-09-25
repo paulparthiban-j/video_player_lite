@@ -45,7 +45,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     try {
       final hasPermission = await FileBrowserService.requestStoragePermission();
       if (!mounted) return;
-      
+
       if (hasPermission) {
         setState(() {
           _hasPermission = true;
@@ -69,9 +69,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Future<void> _loadVideoFiles() async {
     try {
-      final storageDirectories = await FileBrowserService.getStorageDirectories();
+      final storageDirectories =
+          await FileBrowserService.getStorageDirectories();
       if (!mounted) return;
-      
+
       if (storageDirectories.isNotEmpty) {
         setState(() {
           _currentPath = storageDirectories.first;
@@ -97,14 +98,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     });
 
     try {
-      final videoFiles = await FileBrowserService.getVideoFilesInDirectory(path);
+      final videoFiles = await FileBrowserService.getVideoFilesInDirectory(
+        path,
+      );
       if (!mounted) return;
       setState(() {
         _videoFiles = videoFiles;
         _filteredVideoFiles = videoFiles;
         _isLoading = false;
       });
-
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -121,9 +123,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       if (searchTerm.isEmpty) {
         _filteredVideoFiles = _videoFiles;
       } else {
-        _filteredVideoFiles = _videoFiles.where((video) =>
-          video.name.toLowerCase().contains(searchTerm)
-        ).toList();
+        _filteredVideoFiles = _videoFiles
+            .where((video) => video.name.toLowerCase().contains(searchTerm))
+            .toList();
       }
     });
   }
@@ -188,9 +190,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           'Video Browser',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        iconTheme: IconThemeData(
-          color: isDark ? Colors.white : Colors.black,
-        ),
+        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black),
         actions: [
           IconButton(
             onPressed: _refreshFiles,
@@ -211,17 +211,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
 
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.red),
-      );
+      return const Center(child: CircularProgressIndicator(color: Colors.red));
     }
 
     return Column(
-      children: [
-        _buildSearchBar(),
-        _buildPathIndicator(),
-        _buildVideoList(),
-      ],
+      children: [_buildSearchBar(), _buildPathIndicator(), _buildVideoList()],
     );
   }
 
@@ -233,11 +227,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.folder_off,
-              size: 80,
-              color: Colors.grey,
-            ),
+            const Icon(Icons.folder_off, size: 80, color: Colors.grey),
             const SizedBox(height: 24),
             Text(
               'Storage Permission Required',
@@ -251,10 +241,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             const SizedBox(height: 16),
             Text(
               'Allow access to your device storage to browse and play video files.',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 14),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
@@ -263,7 +250,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -300,7 +290,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
         ),
       ),
     );
@@ -322,10 +315,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           Expanded(
             child: Text(
               _currentPath.isNotEmpty ? _currentPath : 'No directory selected',
-              style: const TextStyle(
-                color: Colors.grey,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -343,7 +333,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                _searchTerm.isNotEmpty ? Icons.search_off : Icons.video_library_outlined,
+                _searchTerm.isNotEmpty
+                    ? Icons.search_off
+                    : Icons.video_library_outlined,
                 size: 80,
                 color: Colors.grey,
               ),
@@ -362,10 +354,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               if (_searchTerm.isEmpty)
                 const Text(
                   'Try a different directory or check storage permissions',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
                 ),
             ],
           ),
@@ -385,6 +374,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         },
         child: ListView.builder(
           controller: _scrollController,
+          // Keeps compatibility with Flutter versions before ScrollCacheExtent.
+          // ignore: deprecated_member_use
           cacheExtent: 600,
           padding: const EdgeInsets.all(16),
           itemCount: _filteredVideoFiles.length,

@@ -140,7 +140,7 @@ class FileBrowserService {
   }
 
   static Future<List<String>> getStorageDirectories() async {
-    List<String> directories = [];
+    final List<String> directories = [];
 
     if (Platform.isAndroid) {
       try {
@@ -199,7 +199,7 @@ class FileBrowserService {
   static Future<List<VideoFile>> getVideoFilesInDirectory(
     String directoryPath,
   ) async {
-    List<VideoFile> videoFiles = [];
+    final List<VideoFile> videoFiles = [];
 
     try {
       final directory = Directory(directoryPath);

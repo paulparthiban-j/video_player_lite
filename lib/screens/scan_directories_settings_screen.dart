@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/scan_directory_service.dart';
@@ -58,16 +59,18 @@ class _ScanDirectoriesSettingsScreenState
 
     if (selectedDirectory != null && mounted) {
       // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Validating directory...'),
-            ],
+      unawaited(
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Validating directory...'),
+              ],
+            ),
           ),
         ),
       );
@@ -99,7 +102,7 @@ class _ScanDirectoriesSettingsScreenState
         );
 
         if (success) {
-          HapticFeedback.lightImpact();
+          unawaited(HapticFeedback.lightImpact());
           await _loadDirectories();
 
           if (mounted) {
@@ -166,7 +169,7 @@ class _ScanDirectoriesSettingsScreenState
       );
 
       if (success) {
-        HapticFeedback.lightImpact();
+        unawaited(HapticFeedback.lightImpact());
         await _loadDirectories();
 
         if (mounted) {
@@ -204,7 +207,7 @@ class _ScanDirectoriesSettingsScreenState
       final success = await ScanDirectoryService.resetToDefaults();
 
       if (success) {
-        HapticFeedback.mediumImpact();
+        unawaited(HapticFeedback.mediumImpact());
         await _loadDirectories();
 
         if (mounted) {
@@ -273,57 +276,66 @@ class _ScanDirectoriesSettingsScreenState
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
+          : CustomScrollView(
+              slivers: [
                 // Info Card
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                SliverToBoxAdapter(
+                  child: Container(
+                    margin: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: theme.colorScheme.primary,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Scan Directories',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
                               color: theme.colorScheme.primary,
+                              size: 20,
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'These directories are scanned for video files. Default directories cannot be removed, but you can add custom directories.',
-                        style: TextStyle(
-                          color: theme.textTheme.bodyMedium?.color?.withValues(
-                            alpha: 0.8,
-                          ),
-                          fontSize: 14,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Scan Directories',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Text(
+                          'These directories are scanned for video files. Default directories cannot be removed, but you can add custom directories.',
+                          style: TextStyle(
+                            color: theme.textTheme.bodyMedium?.color
+                                ?.withValues(alpha: 0.8),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
-                // Directories List
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                // Directories List (bottom padding clears the FAB and the
+                // gesture navigation bar).
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    0,
+                    16,
+                    96 + MediaQuery.paddingOf(context).bottom,
+                  ),
+                  sliver: SliverList.builder(
                     itemCount: _allDirectories.length,
                     itemBuilder: (context, index) {
                       final directory = _allDirectories[index];

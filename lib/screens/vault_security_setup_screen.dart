@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../core/ui/responsive.dart';
 import '../services/vault_service.dart';
 
 class VaultSecuritySetupScreen extends StatefulWidget {
@@ -78,7 +80,7 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
       _errorMessage = message;
     });
 
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
   }
 
   Future<void> _setupSecurityQuestions() async {
@@ -89,7 +91,7 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
       _showError = false;
     });
 
-    HapticFeedback.mediumImpact();
+    unawaited(HapticFeedback.mediumImpact());
 
     final questions = _questionControllers
         .map((controller) => controller.text.trim())
@@ -101,37 +103,39 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
     final success = await VaultService.setSecurityQuestions(questions, answers);
 
     if (success) {
-      HapticFeedback.heavyImpact();
+      unawaited(HapticFeedback.heavyImpact());
 
       if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Security Questions Set'),
-          content: const Text(
-            'Your security questions have been set up successfully!\n\nYou can now use them to reset your password if needed.',
-          ),
-          backgroundColor: Colors.grey.shade900,
-          titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18),
-          contentTextStyle: const TextStyle(
-            color: Colors.white70,
-            fontSize: 16,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(
-                  context,
-                ).pushReplacementNamed('/vault'); // Go to vault
-              },
-              child: const Text('OK', style: TextStyle(color: Colors.red)),
+      unawaited(
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Security Questions Set'),
+            content: const Text(
+              'Your security questions have been set up successfully!\n\nYou can now use them to reset your password if needed.',
             ),
-          ],
+            backgroundColor: Colors.grey.shade900,
+            titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18),
+            contentTextStyle: const TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Close dialog
+                  Navigator.of(
+                    context,
+                  ).pushReplacementNamed('/vault'); // Go to vault
+                },
+                child: const Text('OK', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
         ),
       );
     } else {
-      HapticFeedback.lightImpact();
+      unawaited(HapticFeedback.lightImpact());
 
       if (!mounted) return;
       setState(() {
@@ -171,244 +175,255 @@ class _VaultSecuritySetupScreenState extends State<VaultSecuritySetupScreen> {
         child: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                const SizedBox(height: 20),
+            child: MaxWidthBox(
+              maxWidth: 560,
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
 
-                Icon(Icons.security, size: 80, color: Colors.red.shade700),
+                  Icon(Icons.security, size: 80, color: Colors.red.shade700),
 
-                const SizedBox(height: 30),
+                  const SizedBox(height: 30),
 
-                const Text(
-                  'Set Up Security Questions',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                  const Text(
+                    'Set Up Security Questions',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                Text(
-                  'These questions will help you reset your password if you forget it',
-                  style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
-                  textAlign: TextAlign.center,
-                ),
+                  Text(
+                    'These questions let you reset your password and still '
+                    'decrypt your videos if you forget it. If you set them up '
+                    'before, please enter them again to protect your '
+                    'encryption key.',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
 
-                const SizedBox(height: 40),
+                  const SizedBox(height: 40),
 
-                // Security Questions Form
-                ...List.generate(3, (index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade900.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.shade700,
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          // Question Field
-                          TextField(
-                            controller: _questionControllers[index],
-                            focusNode: _questionFocusNodes[index],
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: 'Enter security question ${index + 1}',
-                              hintStyle: TextStyle(color: Colors.grey.shade500),
-                              prefixIcon: const Icon(
-                                Icons.help_outline,
-                                color: Colors.grey,
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 16,
-                              ),
-                            ),
+                  // Security Questions Form
+                  ...List.generate(3, (index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade900.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.grey.shade700,
+                            width: 1,
                           ),
-
-                          Divider(height: 1, color: Colors.grey.shade700),
-
-                          // Answer Field
-                          TextField(
-                            controller: _answerControllers[index],
-                            focusNode: _answerFocusNodes[index],
-                            obscureText: !_answerVisibility[index],
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: 'Enter your answer',
-                              hintStyle: TextStyle(color: Colors.grey.shade500),
-                              prefixIcon: const Icon(
-                                Icons.question_answer,
-                                color: Colors.grey,
+                        ),
+                        child: Column(
+                          children: [
+                            // Question Field
+                            TextField(
+                              controller: _questionControllers[index],
+                              focusNode: _questionFocusNodes[index],
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
                               ),
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _answerVisibility[index] =
-                                        !_answerVisibility[index];
-                                  });
-                                  HapticFeedback.lightImpact();
-                                },
-                                icon: Icon(
-                                  _answerVisibility[index]
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Enter security question ${index + 1}',
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade500,
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.help_outline,
                                   color: Colors.grey,
                                 ),
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 16,
+                                ),
                               ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 16,
+                            ),
+
+                            Divider(height: 1, color: Colors.grey.shade700),
+
+                            // Answer Field
+                            TextField(
+                              controller: _answerControllers[index],
+                              focusNode: _answerFocusNodes[index],
+                              obscureText: !_answerVisibility[index],
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'Enter your answer',
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade500,
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.question_answer,
+                                  color: Colors.grey,
+                                ),
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _answerVisibility[index] =
+                                          !_answerVisibility[index];
+                                    });
+                                    unawaited(HapticFeedback.lightImpact());
+                                  },
+                                  icon: Icon(
+                                    _answerVisibility[index]
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+
+                  // Error Message
+                  if (_showError)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade900.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.red.shade600.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            color: Colors.red.shade400,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage,
+                              style: TextStyle(
+                                color: Colors.red.shade400,
+                                fontSize: 14,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  );
-                }),
 
-                // Error Message
-                if (_showError)
+                  // Setup Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _setupSecurityQuestions,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade700,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: _isLoading
+                          ? const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 12),
+                                Text('Setting up...'),
+                              ],
+                            )
+                          : const Text(
+                              'Set Up Security Questions',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Security Tips
                   Container(
                     padding: const EdgeInsets.all(16),
-                    margin: const EdgeInsets.only(bottom: 20),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade900.withValues(alpha: 0.2),
+                      color: Colors.grey.shade900.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Colors.red.shade600.withValues(alpha: 0.5),
+                        color: Colors.grey.shade700.withValues(alpha: 0.5),
                       ),
                     ),
-                    child: Row(
+                    child: Column(
                       children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: Colors.red.shade400,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _errorMessage,
-                            style: TextStyle(
-                              color: Colors.red.shade400,
-                              fontSize: 14,
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.blue.shade400,
+                              size: 20,
                             ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Security Tips',
+                                style: TextStyle(
+                                  color: Colors.blue.shade400,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '• Choose questions with answers you won\'t forget\n'
+                          '• Use answers that are not easily guessable\n'
+                          '• Store a backup of your answers somewhere safe\n'
+                          '• Don\'t use obvious answers that others might know',
+                          style: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 12,
+                            height: 1.4,
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                // Setup Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _setupSecurityQuestions,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _isLoading
-                        ? const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(width: 12),
-                              Text('Setting up...'),
-                            ],
-                          )
-                        : const Text(
-                            'Set Up Security Questions',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Security Tips
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade900.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.grey.shade700.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: Colors.blue.shade400,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Security Tips',
-                              style: TextStyle(
-                                color: Colors.blue.shade400,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '• Choose questions with answers you won\'t forget\n'
-                        '• Use answers that are not easily guessable\n'
-                        '• Store a backup of your answers somewhere safe\n'
-                        '• Don\'t use obvious answers that others might know',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-              ],
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
           ),
         ),

@@ -79,11 +79,9 @@ class _ParthiPlayGestureDetectorState
       _forwardHoldSpeed = forwardHoldSpeed;
       _rewindHoldSpeed = rewindHoldSpeed;
       _rewindStep = Duration(
-        milliseconds:
-            (_rewindInterval.inMilliseconds * _rewindHoldSpeed).round().clamp(
-                  100,
-                  2000,
-                ),
+        milliseconds: (_rewindInterval.inMilliseconds * _rewindHoldSpeed)
+            .round()
+            .clamp(100, 2000),
       );
     });
   }
@@ -336,9 +334,11 @@ class _ParthiPlayGestureDetectorState
           if (_showVolumeIndicator)
             Center(
               child: _buildCenterIndicator(
-                _currentVolume > 0 
-                  ? (_currentVolume >= 0.5 ? Icons.volume_up : Icons.volume_down)
-                  : Icons.volume_off,
+                _currentVolume > 0
+                    ? (_currentVolume >= 0.5
+                          ? Icons.volume_up
+                          : Icons.volume_down)
+                    : Icons.volume_off,
                 _currentVolume,
                 _currentVolume > 1.0 ? Colors.red : Colors.blue,
                 isVolume: true,
@@ -349,7 +349,9 @@ class _ParthiPlayGestureDetectorState
           if (_showBrightnessIndicator)
             Center(
               child: _buildCenterIndicator(
-                _currentBrightness > 0.5 ? Icons.brightness_7 : Icons.brightness_6,
+                _currentBrightness > 0.5
+                    ? Icons.brightness_7
+                    : Icons.brightness_6,
                 _currentBrightness,
                 Colors.orange,
               ),
@@ -441,12 +443,17 @@ class _ParthiPlayGestureDetectorState
     });
   }
 
-  Widget _buildCenterIndicator(IconData icon, double value, Color color, {bool isVolume = false}) {
+  Widget _buildCenterIndicator(
+    IconData icon,
+    double value,
+    Color color, {
+    bool isVolume = false,
+  }) {
     // For volume boost, we show a special label
     final isBoost = isVolume && value > 1.0;
     // Normalize value for display (0-100% or more for boost)
     final displayValue = (value * 100).round();
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       decoration: BoxDecoration(
@@ -456,11 +463,7 @@ class _ParthiPlayGestureDetectorState
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            color: isBoost ? Colors.red : color,
-            size: 48,
-          ),
+          Icon(icon, color: isBoost ? Colors.red : color, size: 48),
           const SizedBox(height: 12),
           Text(
             isBoost ? 'Boost: $displayValue%' : '$displayValue%',
@@ -477,7 +480,9 @@ class _ParthiPlayGestureDetectorState
             child: ClipRRect(
               borderRadius: BorderRadius.circular(3),
               child: LinearProgressIndicator(
-                value: isVolume ? (value / 2.0).clamp(0.0, 1.0) : value.clamp(0.0, 1.0),
+                value: isVolume
+                    ? (value / 2.0).clamp(0.0, 1.0)
+                    : value.clamp(0.0, 1.0),
                 backgroundColor: Colors.white24,
                 valueColor: AlwaysStoppedAnimation<Color>(
                   isBoost ? Colors.red : color,
@@ -492,9 +497,7 @@ class _ParthiPlayGestureDetectorState
 
   Widget _buildSeekIndicator(Duration duration) {
     final percentage = duration.inMilliseconds > 0
-        ? (_seekPosition.inMilliseconds /
-              duration.inMilliseconds *
-              100)
+        ? (_seekPosition.inMilliseconds / duration.inMilliseconds * 100)
         : 0.0;
 
     return Container(
@@ -566,8 +569,8 @@ class _ParthiPlayGestureDetectorState
 
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
-    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
-    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
+    final String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
+    final String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
     return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
   }
 }

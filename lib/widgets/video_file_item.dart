@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
@@ -319,8 +320,10 @@ class _VideoItemThumbnailState extends State<_VideoItemThumbnail> {
       }
     }
     if (!mounted) return;
-    ThumbnailService.generateThumbnailsBatch([widget.videoFile.path]);
-    _retryLoadThumbnail();
+    unawaited(
+      ThumbnailService.generateThumbnailsBatch([widget.videoFile.path]),
+    );
+    unawaited(_retryLoadThumbnail());
   }
 
   Future<void> _retryLoadThumbnail() async {

@@ -15,8 +15,7 @@ class ParthiPlayControls extends ConsumerStatefulWidget {
   const ParthiPlayControls({super.key});
 
   @override
-  ConsumerState<ParthiPlayControls> createState() =>
-      _ParthiPlayControlsState();
+  ConsumerState<ParthiPlayControls> createState() => _ParthiPlayControlsState();
 }
 
 class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
@@ -206,123 +205,134 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
             colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () async {
-                    // Use the provided back callback if available (handles overlay mode)
-                    final backCallback = ref.read(
-                      videoPlayerBackCallbackProvider,
-                    );
-
-                    await videoController.pause();
-                    videoController.reset();
-
-                    // Instant navigation - removed delay
-                    if (backCallback != null) {
-                      backCallback();
-                    } else if (mounted) {
-                      // Fallback to navigator pop
-                      if (Navigator.of(context).canPop()) {
-                        Navigator.of(context).pop();
-                      } else {
-                        final navigator = Navigator.of(
-                          context,
-                          rootNavigator: false,
-                        );
-                        if (navigator.canPop()) {
-                          navigator.pop();
-                        } else {
-                          final rootNavigator = Navigator.of(
-                            context,
-                            rootNavigator: true,
-                          );
-                          if (rootNavigator.canPop()) {
-                            rootNavigator.pop();
-                          }
-                        }
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                ),
-                Expanded(
-                  child: Row(
+        child: // Keeps the back button and title clear of the status bar, notches
+            // and punch-hole cameras in both orientations.
+            SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Flexible(
-                        child: Text(
-                          videoName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Consumer(
-                        builder: (context, ref, _) {
-                          final useHwDec = ref.watch(
-                            videoPlayerControllerProvider.select(
-                              (s) => s.useHwDec,
-                            ),
+                      IconButton(
+                        onPressed: () async {
+                          // Use the provided back callback if available (handles overlay mode)
+                          final backCallback = ref.read(
+                            videoPlayerBackCallbackProvider,
                           );
-                          return Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                _startHideTimer();
-                                videoController.toggleDecoder();
-                              },
-                              borderRadius: BorderRadius.circular(4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
+
+                          await videoController.pause();
+                          unawaited(videoController.reset());
+
+                          // Instant navigation - removed delay
+                          if (backCallback != null) {
+                            backCallback();
+                          } else if (mounted) {
+                            // Fallback to navigator pop
+                            if (Navigator.of(context).canPop()) {
+                              Navigator.of(context).pop();
+                            } else {
+                              final navigator = Navigator.of(
+                                context,
+                                rootNavigator: false,
+                              );
+                              if (navigator.canPop()) {
+                                navigator.pop();
+                              } else {
+                                final rootNavigator = Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                );
+                                if (rootNavigator.canPop()) {
+                                  rootNavigator.pop();
+                                }
+                              }
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                videoName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: useHwDec ? Colors.blue : Colors.grey,
-                                    width: 1.5,
-                                  ),
-                                  borderRadius: BorderRadius.circular(4),
-                                  color: useHwDec
-                                      ? Colors.blue.withValues(alpha: 0.2)
-                                      : Colors.grey.withValues(alpha: 0.2),
-                                ),
-                                child: Text(
-                                  useHwDec ? 'HW' : 'SW',
-                                  style: TextStyle(
-                                    color: useHwDec ? Colors.blue : Colors.grey,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          );
-                        },
+                            const SizedBox(width: 12),
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final useHwDec = ref.watch(
+                                  videoPlayerControllerProvider.select(
+                                    (s) => s.useHwDec,
+                                  ),
+                                );
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () {
+                                      _startHideTimer();
+                                      videoController.toggleDecoder();
+                                    },
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: useHwDec
+                                              ? Colors.blue
+                                              : Colors.grey,
+                                          width: 1.5,
+                                        ),
+                                        borderRadius: BorderRadius.circular(4),
+                                        color: useHwDec
+                                            ? Colors.blue.withValues(alpha: 0.2)
+                                            : Colors.grey.withValues(
+                                                alpha: 0.2,
+                                              ),
+                                      ),
+                                      child: Text(
+                                        useHwDec ? 'HW' : 'SW',
+                                        style: TextStyle(
+                                          color: useHwDec
+                                              ? Colors.blue
+                                              : Colors.grey,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => _showMoreOptions(videoController),
+                        icon: const Icon(Icons.more_vert, color: Colors.white),
                       ),
                     ],
                   ),
-                ),
-                IconButton(
-                  onPressed: () => _showMoreOptions(videoController),
-                  icon: const Icon(Icons.more_vert, color: Colors.white),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _buildActionRibbon(videoController),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _buildActionRibbon(videoController),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -474,72 +484,70 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!isLocked) ...[
-                  Row(
-                    children: [
-                      Text(
+                  Builder(
+                    builder: (context) {
+                      final positionLabel = Text(
                         _formatDurationOrUnknown(displayPosition),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
                         ),
-                      ),
-                      Expanded(
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 8,
-                            ),
-                            activeTrackColor: Colors.red.shade600,
-                            inactiveTrackColor: Colors.white.withValues(
-                              alpha: 0.3,
-                            ),
-                            thumbColor: Colors.red.shade600,
-                            overlayShape: const RoundSliderOverlayShape(
-                              overlayRadius: 16,
-                            ),
+                      );
+                      final seekBar = SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 8,
                           ),
-                          child: Slider(
-                            min: 0.0,
-                            max: hasDuration
-                                ? duration.inMilliseconds.toDouble()
-                                : 1.0,
-                            value: displayPosition.inMilliseconds
-                                .toDouble()
-                                .clamp(
-                                  0.0,
-                                  hasDuration
-                                      ? duration.inMilliseconds.toDouble()
-                                      : 1.0,
-                                ),
-                            onChangeStart: (_) {
-                              setState(() {
-                                _isSeeking = true;
-                                _seekPosition = displayPosition;
-                              });
-                            },
-                            onChangeEnd: (_) {
-                              setState(() {
-                                _isSeeking = false;
-                              });
-                              if (hasDuration) {
-                                videoController.seekTo(_seekPosition);
-                              }
-                            },
-                            onChanged: hasDuration
-                                ? (value) {
-                                    _startHideTimer();
-                                    setState(() {
-                                      _seekPosition = Duration(
-                                        milliseconds: value.round(),
-                                      );
-                                    });
-                                  }
-                                : null,
+                          activeTrackColor: Colors.red.shade600,
+                          inactiveTrackColor: Colors.white.withValues(
+                            alpha: 0.3,
+                          ),
+                          thumbColor: Colors.red.shade600,
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 16,
                           ),
                         ),
-                      ),
-                      GestureDetector(
+                        child: Slider(
+                          min: 0.0,
+                          max: hasDuration
+                              ? duration.inMilliseconds.toDouble()
+                              : 1.0,
+                          value: displayPosition.inMilliseconds
+                              .toDouble()
+                              .clamp(
+                                0.0,
+                                hasDuration
+                                    ? duration.inMilliseconds.toDouble()
+                                    : 1.0,
+                              ),
+                          onChangeStart: (_) {
+                            setState(() {
+                              _isSeeking = true;
+                              _seekPosition = displayPosition;
+                            });
+                          },
+                          onChangeEnd: (_) {
+                            setState(() {
+                              _isSeeking = false;
+                            });
+                            if (hasDuration) {
+                              videoController.seekTo(_seekPosition);
+                            }
+                          },
+                          onChanged: hasDuration
+                              ? (value) {
+                                  _startHideTimer();
+                                  setState(() {
+                                    _seekPosition = Duration(
+                                      milliseconds: value.round(),
+                                    );
+                                  });
+                                }
+                              : null,
+                        ),
+                      );
+                      final durationLabel = GestureDetector(
                         onTap: hasDuration
                             ? () {
                                 setState(() {
@@ -556,19 +564,39 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
                             fontSize: 12,
                           ),
                         ),
-                      ),
-                    ],
+                      );
+                      // Narrow screens and large text: give the seek bar the
+                      // full width and put the times underneath.
+                      final compact =
+                          MediaQuery.sizeOf(context).width < 400 ||
+                          MediaQuery.textScalerOf(context).scale(1) > 1.3;
+                      if (!compact) {
+                        return Row(
+                          children: [
+                            positionLabel,
+                            Expanded(child: seekBar),
+                            durationLabel,
+                          ],
+                        );
+                      }
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          seekBar,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Row(
+                              children: [
+                                Flexible(child: positionLabel),
+                                const Spacer(),
+                                Flexible(child: durationLabel),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
-                  if (hasDuration)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          '',
-                        ),
-                      ),
-                    ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
@@ -775,7 +803,8 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       return;
     }
 
-    final title = videoState.videoPath?.split(Platform.pathSeparator).last ??
+    final title =
+        videoState.videoPath?.split(Platform.pathSeparator).last ??
         videoState.videoUrl ??
         'Parthi Play';
 
@@ -806,9 +835,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
     if (qualities.isEmpty) return const SizedBox.shrink();
 
     final selected = ref.watch(
-      videoPlayerControllerProvider.select(
-        (s) => s.selectedYoutubeQuality,
-      ),
+      videoPlayerControllerProvider.select((s) => s.selectedYoutubeQuality),
     );
 
     String menuLabel(YoutubeStreamQuality q) {
@@ -1005,7 +1032,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
   }
 
   void _showSubtitleSelection() {
-    final videoState = ref.watch(videoPlayerControllerProvider);
+    final videoState = ref.read(videoPlayerControllerProvider);
     if (videoState.videoPath == null) return;
     showModalBottomSheet(
       context: context,
@@ -1031,7 +1058,15 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       ),
       builder: (context) => Consumer(
         builder: (context, ref, child) {
-          final currentState = ref.watch(videoPlayerControllerProvider);
+          // Only rebuild the sheet for track changes, not playback ticks.
+          final currentState = ref.watch(
+            videoPlayerControllerProvider.select(
+              (s) => (
+                audioTracks: s.audioTracks,
+                audioTrackIndex: s.audioTrackIndex,
+              ),
+            ),
+          );
           return Container(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1143,7 +1178,11 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       ),
       builder: (context) => Consumer(
         builder: (context, ref, child) {
-          final settings = ref.watch(videoPlayerControllerProvider);
+          final settings = ref.watch(
+            videoPlayerControllerProvider.select(
+              (s) => (useHwDec: s.useHwDec, volumeBoost: s.volumeBoost),
+            ),
+          );
 
           return Container(
             padding: const EdgeInsets.all(16),

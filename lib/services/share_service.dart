@@ -16,7 +16,6 @@ class ShareException implements Exception {
 }
 
 class ShareService {
-
   static Future<XFile> prepareShareFile(String filePath) async {
     final sourceFile = File(filePath);
     if (!await sourceFile.exists()) {

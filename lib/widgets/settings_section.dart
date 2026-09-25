@@ -32,32 +32,28 @@ class SettingsSection extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  color: Colors.red,
-                  size: 24,
-                ),
+                Icon(icon, color: Colors.red, size: 24),
                 const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: colorScheme.onSurface,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: colorScheme.onSurface,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          
+
           // Section content
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: children,
-            ),
+            child: Column(children: children),
           ),
-          
+
           const SizedBox(height: 16),
         ],
       ),

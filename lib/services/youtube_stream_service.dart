@@ -77,9 +77,8 @@ class YoutubeStreamService {
         );
       }
 
-      final storedHeight = preferredHeight ?? await getPreferredHeight(
-        video.id.value,
-      );
+      final storedHeight =
+          preferredHeight ?? await getPreferredHeight(video.id.value);
 
       final manifest = await yt.videos.streamsClient.getManifest(video.id);
       final muxed = manifest.muxed;
@@ -91,8 +90,8 @@ class YoutubeStreamService {
 
         final bestAudio = audioOnly.isNotEmpty
             ? audioOnly.reduce(
-                (a, b) => a.bitrate.kiloBitsPerSecond >
-                        b.bitrate.kiloBitsPerSecond
+                (a, b) =>
+                    a.bitrate.kiloBitsPerSecond > b.bitrate.kiloBitsPerSecond
                     ? a
                     : b,
               )
@@ -132,8 +131,9 @@ class YoutubeStreamService {
             final stream = entry.value;
             final height = entry.key;
             final fps = stream.framerate.framesPerSecond.toDouble();
-            final label =
-                fps >= 50 ? '${height}p ${fps.round()}fps' : '${height}p';
+            final label = fps >= 50
+                ? '${height}p ${fps.round()}fps'
+                : '${height}p';
             qualities.add(
               YoutubeStreamQuality(
                 label: label,
@@ -152,7 +152,9 @@ class YoutubeStreamService {
           final stream = entry.value;
           final height = entry.key;
           final fps = stream.framerate.framesPerSecond.toDouble();
-          final label = fps >= 50 ? '${height}p ${fps.round()}fps' : '${height}p';
+          final label = fps >= 50
+              ? '${height}p ${fps.round()}fps'
+              : '${height}p';
           qualities.add(
             YoutubeStreamQuality(
               label: label,
@@ -172,8 +174,9 @@ class YoutubeStreamService {
 
         YoutubeStreamQuality selected;
         if (storedHeight != null) {
-          final candidates =
-              qualities.where((q) => q.height <= storedHeight).toList();
+          final candidates = qualities
+              .where((q) => q.height <= storedHeight)
+              .toList();
           selected = candidates.isNotEmpty ? candidates.last : qualities.last;
         } else {
           selected = qualities.last;
@@ -188,9 +191,7 @@ class YoutubeStreamService {
         );
       }
 
-      throw const YoutubeStreamException(
-        'No compatible YouTube stream found',
-      );
+      throw const YoutubeStreamException('No compatible YouTube stream found');
     } catch (e) {
       if (e is YoutubeStreamException) rethrow;
       throw const YoutubeStreamException(
@@ -211,7 +212,10 @@ class YoutubeStreamService {
     int? preferredHeight,
   }) async {
     if (!isYoutubeUrl(url)) return null;
-    return resolvePlayableUrlWithQualities(url, preferredHeight: preferredHeight);
+    return resolvePlayableUrlWithQualities(
+      url,
+      preferredHeight: preferredHeight,
+    );
   }
 
   static Future<String> resolveIfNeeded(String url) async {

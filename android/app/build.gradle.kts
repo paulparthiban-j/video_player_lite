@@ -1,9 +1,32 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Release signing is read from android/key.properties (git-ignored), or from
+// environment variables in CI (see .github/workflows/release.yml):
+//   storeFile=/absolute/path/to/upload-keystore.jks
+//   storePassword=...
+//   keyAlias=upload
+//   keyPassword=...
+// Without either, release builds fall back to the debug key so local
+// `flutter run --release` keeps working; such builds cannot be published.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) FileInputStream(file).use { load(it) }
+    System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }?.let {
+        setProperty("storeFile", it)
+        setProperty("storePassword", System.getenv("ANDROID_KEYSTORE_PASSWORD"))
+        setProperty("keyAlias", System.getenv("ANDROID_KEY_ALIAS"))
+        setProperty("keyPassword", System.getenv("ANDROID_KEY_PASSWORD"))
+    }
+}
+val hasReleaseKeystore = keystoreProperties.getProperty("storeFile") != null
 
 android {
     namespace = "com.parthi.play"
@@ -15,28 +38,22 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
-    // Enable build optimizations
-    buildFeatures {
-        buildConfig = false
-    }
-
-    packagingOptions {
+    packaging {
         resources {
-            // Exclude duplicate files
-            pickFirsts.add("**/libc++_shared.so")
-            pickFirsts.add("**/libjsc.so")
-            
-            // Exclude unnecessary metadata
-            excludes.add("META-INF/DEPENDENCIES")
-            excludes.add("META-INF/LICENSE")
-            excludes.add("META-INF/LICENSE.txt")
-            excludes.add("META-INF/NOTICE")
-            excludes.add("META-INF/NOTICE.txt")
-            excludes.add("META-INF/ASL2.0")
+            pickFirsts += listOf("**/libc++_shared.so", "**/libjsc.so")
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/ASL2.0",
+            )
+        }
+        jniLibs {
+            // Store native libraries uncompressed and page-aligned so the app
+            // loads on devices with 16 KB memory pages (Android 15+).
+            useLegacyPackaging = false
         }
     }
 
@@ -48,36 +65,49 @@ android {
         versionName = flutter.versionName
     }
 
-    // Split APKs disabled due to media_kit_libs_video NDI conflicts
-    // Using universal APK instead
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
-            
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn("No release keystore configured: signing release with the debug key")
+                signingConfigs.getByName("debug")
+            }
+
             // Flutter apps can break with R8/resource shrinking in release;
             // keep them off unless fully audited with proper keep rules.
             isMinifyEnabled = false
             isShrinkResources = false
-            
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
 
-    // Enable Android App Bundle for smaller distribution size
+    // Play Store delivers per-ABI/density/language splits from the bundle.
     bundle {
-        language {
-            enableSplit = true
-        }
-        density {
-            enableSplit = true
-        }
-        abi {
-            enableSplit = true
-        }
+        language { enableSplit = true }
+        density { enableSplit = true }
+        abi { enableSplit = true }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
