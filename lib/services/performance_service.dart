@@ -6,6 +6,8 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/ui/responsive.dart';
+
 class PerformanceService {
   static bool _isLowEndDevice = false;
   static bool _isInitialized = false;
@@ -177,11 +179,7 @@ class PerformanceService {
 
   static Future<void> resetPerformanceSettings() async {
     try {
-      // Reset to default orientations
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
+      await AppOrientation.applyBrowsing();
 
       // Show system UI again
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

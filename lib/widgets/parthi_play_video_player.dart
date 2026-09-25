@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../core/ui/responsive.dart';
 import '../core/video_player_controller.dart';
 import '../services/performance_service.dart';
 import '../services/system_controls_service.dart';
@@ -343,11 +344,8 @@ class _ParthiPlayVideoPlayerState extends ConsumerState<ParthiPlayVideoPlayer>
   }
 
   void _resetOrientation() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    _setNativeOrientation('setSensorPortrait');
+    unawaited(AppOrientation.applyBrowsing());
+    _setNativeOrientation(AppOrientation.nativeBrowsingCommand());
   }
 
   void _applyOrientation(PlayerOrientation orientation) {

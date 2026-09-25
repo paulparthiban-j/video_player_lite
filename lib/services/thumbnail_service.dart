@@ -24,13 +24,25 @@ class ThumbnailService {
   static const Duration _queueSpacing = Duration(milliseconds: 120);
   static bool _isPaused = false;
 
-  static Future<void> initialize() async {
+  static Future<void>? _initializing;
+
+  /// Prepares the cache directory. Concurrent callers share one attempt; a
+  /// failed attempt (e.g. storage not yet available) is retried next time.
+  static Future<void> initialize() {
+    if (_thumbnailDir != null) return Future.value();
+    return _initializing ??= _initialize().whenComplete(
+      () => _initializing = null,
+    );
+  }
+
+  static Future<void> _initialize() async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      _thumbnailDir = Directory(path.join(appDir.path, 'thumbnails'));
-      if (!await _thumbnailDir!.exists()) {
-        await _thumbnailDir!.create(recursive: true);
+      final dir = Directory(path.join(appDir.path, 'thumbnails'));
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
       }
+      _thumbnailDir = dir;
       await _enforceCacheLimit();
     } catch (e) {
       debugPrint('Error initializing thumbnail service: $e');
@@ -44,12 +56,12 @@ class ThumbnailService {
   }
 
   static Future<String?> getThumbnailPath(String videoPath) async {
-    if (_thumbnailDir == null) {
-      await initialize();
-    }
+    await initialize();
+    final dir = _thumbnailDir;
+    if (dir == null) return null;
 
     final fileName = _getThumbnailFileName(videoPath);
-    final thumbnailPath = path.join(_thumbnailDir!.path, fileName);
+    final thumbnailPath = path.join(dir.path, fileName);
 
     if (await File(thumbnailPath).exists()) {
       return thumbnailPath;
@@ -60,9 +72,9 @@ class ThumbnailService {
 
   static Future<String?> generateThumbnail(String videoPath) async {
     try {
-      if (_thumbnailDir == null) {
-        await initialize();
-      }
+      await initialize();
+      final dir = _thumbnailDir;
+      if (dir == null) return null;
 
       final cachedPath = await getThumbnailPath(videoPath);
       if (cachedPath != null) {
@@ -74,11 +86,11 @@ class ThumbnailService {
       }
 
       final fileName = _getThumbnailFileName(videoPath);
-      final thumbnailPath = path.join(_thumbnailDir!.path, fileName);
+      final thumbnailPath = path.join(dir.path, fileName);
 
       final generatedPath = await VideoThumbnail.thumbnailFile(
         video: videoPath,
-        thumbnailPath: _thumbnailDir!.path,
+        thumbnailPath: dir.path,
         imageFormat: ImageFormat.JPEG,
         quality: _thumbnailQuality,
         maxWidth: _thumbnailMaxWidth,

@@ -1,0 +1,174 @@
+name: Release
+
+# Publishes a GitHub Release with downloadable APKs and an App Bundle.
+#
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# or run it manually from the Actions tab ("Run workflow") with a version.
+#
+# Signing: add these repository secrets (Settings > Secrets and variables >
+# Actions) to sign with your upload key. Without them the build is signed
+# with a throwaway debug key: it installs fine, but it can't be published to
+# Play and users must uninstall before switching to a properly signed build.
+#   ANDROID_KEYSTORE_BASE64   base64 of the .jks file (base64 -w0 upload.jks)
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.2.0 (creates tag v1.2.0)"
+        required: true
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  android:
+    name: Build and publish Android release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Version '$VERSION' is not semantic (expected e.g. 1.2.0)"
+            exit 1
+          fi
+          # versionCode must increase with every upload; the run number does.
+          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$(( 1000 + GITHUB_RUN_NUMBER ))" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify
+        run: |
+          flutter analyze --fatal-infos
+          flutter test
+
+      - name: Configure signing
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 not set; signing with the debug key"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build APKs and App Bundle
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ARGS="--release --build-name=${{ steps.version.outputs.name }} --build-number=${{ steps.version.outputs.code }}"
+          flutter build apk $ARGS
+          flutter build apk $ARGS --split-per-abi
+          flutter build appbundle $ARGS
+
+      - name: Collect artifacts
+        id: collect
+        shell: bash
+        run: |
+          V="${{ steps.version.outputs.name }}"
+          OUT=dist
+          mkdir -p "$OUT"
+          APKS=build/app/outputs/flutter-apk
+          cp "$APKS/app-release.apk"             "$OUT/ParthiPlay-$V-universal.apk"
+          cp "$APKS/app-arm64-v8a-release.apk"   "$OUT/ParthiPlay-$V-arm64-v8a.apk"
+          cp "$APKS/app-armeabi-v7a-release.apk" "$OUT/ParthiPlay-$V-armeabi-v7a.apk"
+          if [ -f "$APKS/app-x86_64-release.apk" ]; then
+            cp "$APKS/app-x86_64-release.apk"    "$OUT/ParthiPlay-$V-x86_64.apk"
+          fi
+          cp build/app/outputs/bundle/release/app-release.aab "$OUT/ParthiPlay-$V.aab"
+          (cd "$OUT" && sha256sum * > SHA256SUMS.txt)
+          ls -lh "$OUT"
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          V="${{ steps.version.outputs.name }}"
+          {
+            echo "## Download"
+            echo
+            echo "| File | Use it for |"
+            echo "| --- | --- |"
+            echo "| \`ParthiPlay-$V-arm64-v8a.apk\` | Most phones from 2017 onwards (smallest download) |"
+            echo "| \`ParthiPlay-$V-armeabi-v7a.apk\` | Older 32-bit phones |"
+            echo "| \`ParthiPlay-$V-universal.apk\` | Not sure? This works on every device |"
+            echo "| \`ParthiPlay-$V.aab\` | Google Play upload |"
+            echo
+            echo "Install: download the APK on your phone, open it, and allow"
+            echo "\"Install unknown apps\" for your browser when asked."
+            echo
+            if [ "${{ steps.signing.outputs.signed }}" != "true" ]; then
+              echo "> [!WARNING]"
+              echo "> This build is signed with a debug key. It installs and runs"
+              echo "> normally, but it can't update a Play Store install, and it"
+              echo "> can't be uploaded to Play."
+              echo
+            fi
+            echo "Checksums are in \`SHA256SUMS.txt\`."
+          } > dist/NOTES.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Parthi Play ${{ steps.version.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          body_path: dist/NOTES.md
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease == true || contains(steps.version.outputs.name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.apk
+            dist/*.aab
+            dist/SHA256SUMS.txt
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/ui/responsive.dart';
+
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
@@ -29,279 +31,290 @@ class AboutScreen extends StatelessWidget {
         iconTheme: IconThemeData(color: primaryText),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 32),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.paddingOf(context).bottom,
+        ),
+        child: MaxWidthBox(
+          maxWidth: 720,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 32),
 
-            // App Logo
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.red.withValues(alpha: 0.3),
-                  width: 2,
+              // App Logo
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.red.withValues(alpha: 0.3),
+                    width: 2,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.play_circle_outline,
+                  size: 60,
+                  color: Colors.red,
                 ),
               ),
-              child: const Icon(
-                Icons.play_circle_outline,
-                size: 60,
-                color: Colors.red,
+
+              const SizedBox(height: 24),
+
+              // App Name
+              Text(
+                'PARTHI PLAY',
+                style: TextStyle(
+                  color: primaryText,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 8),
 
-            // App Name
-            Text(
-              'PARTHI PLAY',
-              style: TextStyle(
-                color: primaryText,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+              // Version
+              Text(
+                'Version 1.0.0',
+                style: TextStyle(color: secondaryText, fontSize: 16),
               ),
-            ),
 
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-            // Version
-            Text(
-              'Version 1.0.0',
-              style: TextStyle(color: secondaryText, fontSize: 16),
-            ),
-
-            const SizedBox(height: 8),
-
-            // Build Number
-            Text(
-              'Build 20240101',
-              style: TextStyle(color: secondaryText, fontSize: 14),
-            ),
-
-            const SizedBox(height: 32),
-
-            // Description
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cardBorder),
+              // Build Number
+              Text(
+                'Build 20240101',
+                style: TextStyle(color: secondaryText, fontSize: 14),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'About',
-                    style: TextStyle(
-                      color: primaryText,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+
+              const SizedBox(height: 32),
+
+              // Description
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'About',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Parthi Play is a professional video player application designed for the best viewing experience. With support for multiple video formats, gesture controls, and advanced features, it provides everything you need for video playback.',
-                    style: TextStyle(
-                      color: primaryText,
-                      fontSize: 14,
-                      height: 1.5,
+                    const SizedBox(height: 12),
+                    Text(
+                      'Parthi Play is a professional video player application designed for the best viewing experience. With support for multiple video formats, gesture controls, and advanced features, it provides everything you need for video playback.',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // Features
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cardBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Key Features',
-                    style: TextStyle(
-                      color: primaryText,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+              // Features
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Key Features',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildFeatureItem(
-                    context,
-                    '- Support for multiple video formats',
-                  ),
-                  _buildFeatureItem(
-                    context,
-                    '- Gesture controls for easy navigation',
-                  ),
-                  _buildFeatureItem(context, '- Adjustable playback speed'),
-                  _buildFeatureItem(context, '- Multiple aspect ratio options'),
-                  _buildFeatureItem(context, '- Subtitle support'),
-                  _buildFeatureItem(context, '- Hardware acceleration'),
-                  _buildFeatureItem(context, '- Performance optimization'),
-                  _buildFeatureItem(context, '- Dark theme interface'),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Developer Info
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cardBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Developer',
-                    style: TextStyle(
-                      color: primaryText,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 12),
+                    _buildFeatureItem(
+                      context,
+                      '- Support for multiple video formats',
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Professional Flutter Development',
-                    style: TextStyle(color: primaryText, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Built with Flutter and Riverpod',
-                    style: TextStyle(color: secondaryText, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Contact & Links
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cardBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Connect',
-                    style: TextStyle(
-                      color: primaryText,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    _buildFeatureItem(
+                      context,
+                      '- Gesture controls for easy navigation',
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildLinkItem(
-                    context,
-                    'Report Issues',
-                    Icons.bug_report,
-                    () => _launchUrl('https://github.com/issues'),
-                  ),
-                  _buildLinkItem(
-                    context,
-                    'Request Features',
-                    Icons.lightbulb_outline,
-                    () => _launchUrl('https://github.com/features'),
-                  ),
-                  _buildLinkItem(
-                    context,
-                    'Rate App',
-                    Icons.star,
-                    () => _launchUrl('https://play.google.com/store'),
-                  ),
-                  _buildLinkItem(
-                    context,
-                    'Share App',
-                    Icons.share,
-                    () => _shareApp(context),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Legal
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cardBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Legal',
-                    style: TextStyle(
-                      color: primaryText,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    _buildFeatureItem(context, '- Adjustable playback speed'),
+                    _buildFeatureItem(
+                      context,
+                      '- Multiple aspect ratio options',
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildLinkItem(
-                    context,
-                    'Privacy Policy',
-                    Icons.privacy_tip,
-                    () => _showPrivacyPolicy(context),
-                  ),
-                  _buildLinkItem(
-                    context,
-                    'Terms of Service',
-                    Icons.description,
-                    () => _showTermsOfService(context),
-                  ),
-                  _buildLinkItem(
-                    context,
-                    'Licenses',
-                    Icons.info,
-                    () => _showLicenses(context),
-                  ),
-                ],
+                    _buildFeatureItem(context, '- Subtitle support'),
+                    _buildFeatureItem(context, '- Hardware acceleration'),
+                    _buildFeatureItem(context, '- Performance optimization'),
+                    _buildFeatureItem(context, '- Dark theme interface'),
+                  ],
+                ),
               ),
-            ),
 
-            const SizedBox(height: 32),
+              const SizedBox(height: 24),
 
-            // Copyright
-            Text(
-              '© 2024 Parthi Play',
-              style: TextStyle(color: secondaryText, fontSize: 12),
-            ),
+              // Developer Info
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Developer',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Professional Flutter Development',
+                      style: TextStyle(color: primaryText, fontSize: 14),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Built with Flutter and Riverpod',
+                      style: TextStyle(color: secondaryText, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
 
-            const SizedBox(height: 8),
+              const SizedBox(height: 24),
 
-            Text(
-              'All rights reserved',
-              style: TextStyle(color: secondaryText, fontSize: 12),
-            ),
+              // Contact & Links
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Connect',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildLinkItem(
+                      context,
+                      'Report Issues',
+                      Icons.bug_report,
+                      () => _launchUrl('https://github.com/issues'),
+                    ),
+                    _buildLinkItem(
+                      context,
+                      'Request Features',
+                      Icons.lightbulb_outline,
+                      () => _launchUrl('https://github.com/features'),
+                    ),
+                    _buildLinkItem(
+                      context,
+                      'Rate App',
+                      Icons.star,
+                      () => _launchUrl('https://play.google.com/store'),
+                    ),
+                    _buildLinkItem(
+                      context,
+                      'Share App',
+                      Icons.share,
+                      () => _shareApp(context),
+                    ),
+                  ],
+                ),
+              ),
 
-            const SizedBox(height: 32),
-          ],
+              const SizedBox(height: 24),
+
+              // Legal
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Legal',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildLinkItem(
+                      context,
+                      'Privacy Policy',
+                      Icons.privacy_tip,
+                      () => _showPrivacyPolicy(context),
+                    ),
+                    _buildLinkItem(
+                      context,
+                      'Terms of Service',
+                      Icons.description,
+                      () => _showTermsOfService(context),
+                    ),
+                    _buildLinkItem(
+                      context,
+                      'Licenses',
+                      Icons.info,
+                      () => _showLicenses(context),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              // Copyright
+              Text(
+                '© 2024 Parthi Play',
+                style: TextStyle(color: secondaryText, fontSize: 12),
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                'All rights reserved',
+                style: TextStyle(color: secondaryText, fontSize: 12),
+              ),
+
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       ),
     );
@@ -333,11 +346,12 @@ class AboutScreen extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.red, size: 20),
             const SizedBox(width: 12),
-            Text(
-              title,
-              style: TextStyle(color: colorScheme.onSurface, fontSize: 14),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(color: colorScheme.onSurface, fontSize: 14),
+              ),
             ),
-            const Spacer(),
             Icon(
               Icons.arrow_forward_ios,
               color: colorScheme.onSurfaceVariant,

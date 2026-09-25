@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:flutter/services.dart';
 import 'core/app/error_reporting.dart';
 import 'core/theme/app_theme.dart';
+import 'core/ui/responsive.dart';
 import 'services/theme_service.dart';
 import 'services/vault_service.dart';
 import 'screens/parthi_play_main_screen.dart';
@@ -23,10 +23,7 @@ void main() {
     WidgetsFlutterBinding.ensureInitialized();
     ErrorReporting.install();
 
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
+    await AppOrientation.applyBrowsing();
 
     try {
       MediaKit.ensureInitialized();

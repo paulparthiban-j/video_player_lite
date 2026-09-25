@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
+import '../core/ui/responsive.dart';
 import '../services/vault_service.dart';
 import '../widgets/parthi_play_video_player.dart';
 
@@ -541,180 +542,205 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
       child: RefreshIndicator(
         onRefresh: _loadVaultVideos,
         color: Colors.red.shade700,
-        child: ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: _vaultVideos.length,
-          itemBuilder: (context, index) {
-            final isDark = Theme.of(context).brightness == Brightness.dark;
-            final video = _vaultVideos[index];
-            final isSelected = _selectedVideos.contains(video.id);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.grey.shade900.withValues(alpha: 0.3)
-                    : Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isSelected
-                      ? Colors.red.shade600
-                      : (isDark
-                            ? Colors.grey.shade700.withValues(alpha: 0.5)
-                            : Colors.grey[300]!),
-                  width: isSelected ? 2 : 1,
-                ),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              // Bottom padding clears the action buttons and gesture bar.
+              padding: EdgeInsets.fromLTRB(
+                context.pagePadding,
+                16,
+                context.pagePadding,
+                96 + MediaQuery.paddingOf(context).bottom,
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.grey.shade800 : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.lock,
-                    color: isDark ? Colors.grey : Colors.grey[700],
-                    size: 30,
-                  ),
-                ),
-                title: Text(
-                  video.fileName,
-                  style: TextStyle(
-                    color: onSurface,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatFileSize(video.fileSize),
-                      style: TextStyle(color: onSurfaceVariant, fontSize: 12),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Protected: ${_formatDate(video.hiddenDate)}',
-                      style: TextStyle(color: onSurfaceVariant, fontSize: 12),
-                    ),
-                  ],
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isSelectionMode)
-                      Checkbox(
-                        value: isSelected,
-                        onChanged: (_) => _toggleSelection(video.id),
-                        activeColor: Colors.red.shade700,
-                        checkColor: Colors.white,
-                      )
-                    else ...[
-                      IconButton(
-                        onPressed: () => _playVideo(video),
-                        icon: Icon(Icons.play_arrow, color: onSurface),
+              sliver: SliverAdaptiveList(
+                itemCount: _vaultVideos.length,
+                itemBuilder: (context, index) {
+                  final isDark =
+                      Theme.of(context).brightness == Brightness.dark;
+                  final video = _vaultVideos[index];
+                  final isSelected = _selectedVideos.contains(video.id);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.grey.shade900.withValues(alpha: 0.3)
+                          : Colors.grey[100],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? Colors.red.shade600
+                            : (isDark
+                                  ? Colors.grey.shade700.withValues(alpha: 0.5)
+                                  : Colors.grey[300]!),
+                        width: isSelected ? 2 : 1,
                       ),
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: onSurfaceVariant),
-                        onSelected: (value) async {
-                          switch (value) {
-                            case 'unhide':
-                              final scaffoldMessenger = ScaffoldMessenger.of(
-                                context,
-                              );
-                              final success = await _unhideWithProgress(
-                                video.id,
-                                title: 'Restoring ${video.fileName}',
-                              );
-                              if (success && mounted) {
-                                scaffoldMessenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Video removed from vault: ${video.fileName}',
-                                    ),
-                                    backgroundColor: Colors.green.shade700,
-                                  ),
-                                );
-                                unawaited(_loadVaultVideos());
-                              }
-                              break;
-                            case 'delete':
-                              final scaffoldMessenger = ScaffoldMessenger.of(
-                                context,
-                              );
-                              final confirmed = await _showConfirmDialog(
-                                'Delete Video',
-                                'Are you sure you want to permanently delete ${video.fileName}?',
-                              );
-                              if (confirmed) {
-                                final success =
-                                    await VaultService.deleteFromVault(
-                                      video.id,
-                                    );
-                                if (success && mounted) {
-                                  scaffoldMessenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Video deleted: ${video.fileName}',
-                                      ),
-                                      backgroundColor: Colors.orange.shade700,
-                                    ),
-                                  );
-                                  unawaited(_loadVaultVideos());
-                                }
-                              }
-                              break;
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'unhide',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.remove_circle_outline,
-                                  color: Colors.green,
-                                ),
-                                SizedBox(width: 8),
-                                Text('Remove from Vault'),
-                              ],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(16),
+                      leading: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.grey.shade800
+                              : Colors.grey[300],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.lock,
+                          color: isDark ? Colors.grey : Colors.grey[700],
+                          size: 30,
+                        ),
+                      ),
+                      title: Text(
+                        video.fileName,
+                        style: TextStyle(
+                          color: onSurface,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatFileSize(video.fileSize),
+                            style: TextStyle(
+                              color: onSurfaceVariant,
+                              fontSize: 12,
                             ),
                           ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete, color: Colors.red),
-                                SizedBox(width: 8),
-                                Text('Delete'),
-                              ],
+                          const SizedBox(height: 2),
+                          Text(
+                            'Protected: ${_formatDate(video.hiddenDate)}',
+                            style: TextStyle(
+                              color: onSurfaceVariant,
+                              fontSize: 12,
                             ),
                           ),
                         ],
                       ),
-                    ],
-                  ],
-                ),
-                onTap: () {
-                  if (_isSelectionMode) {
-                    _toggleSelection(video.id);
-                  } else {
-                    _playVideo(video);
-                  }
-                },
-                onLongPress: () {
-                  unawaited(HapticFeedback.mediumImpact());
-                  _toggleSelection(video.id);
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_isSelectionMode)
+                            Checkbox(
+                              value: isSelected,
+                              onChanged: (_) => _toggleSelection(video.id),
+                              activeColor: Colors.red.shade700,
+                              checkColor: Colors.white,
+                            )
+                          else ...[
+                            IconButton(
+                              onPressed: () => _playVideo(video),
+                              icon: Icon(Icons.play_arrow, color: onSurface),
+                            ),
+                            PopupMenuButton<String>(
+                              icon: Icon(
+                                Icons.more_vert,
+                                color: onSurfaceVariant,
+                              ),
+                              onSelected: (value) async {
+                                switch (value) {
+                                  case 'unhide':
+                                    final scaffoldMessenger =
+                                        ScaffoldMessenger.of(context);
+                                    final success = await _unhideWithProgress(
+                                      video.id,
+                                      title: 'Restoring ${video.fileName}',
+                                    );
+                                    if (success && mounted) {
+                                      scaffoldMessenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Video removed from vault: ${video.fileName}',
+                                          ),
+                                          backgroundColor:
+                                              Colors.green.shade700,
+                                        ),
+                                      );
+                                      unawaited(_loadVaultVideos());
+                                    }
+                                    break;
+                                  case 'delete':
+                                    final scaffoldMessenger =
+                                        ScaffoldMessenger.of(context);
+                                    final confirmed = await _showConfirmDialog(
+                                      'Delete Video',
+                                      'Are you sure you want to permanently delete ${video.fileName}?',
+                                    );
+                                    if (confirmed) {
+                                      final success =
+                                          await VaultService.deleteFromVault(
+                                            video.id,
+                                          );
+                                      if (success && mounted) {
+                                        scaffoldMessenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Video deleted: ${video.fileName}',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orange.shade700,
+                                          ),
+                                        );
+                                        unawaited(_loadVaultVideos());
+                                      }
+                                    }
+                                    break;
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'unhide',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.remove_circle_outline,
+                                        color: Colors.green,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text('Remove from Vault'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Delete'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                      onTap: () {
+                        if (_isSelectionMode) {
+                          _toggleSelection(video.id);
+                        } else {
+                          _playVideo(video);
+                        }
+                      },
+                      onLongPress: () {
+                        unawaited(HapticFeedback.mediumImpact());
+                        _toggleSelection(video.id);
+                      },
+                    ),
+                  );
                 },
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );

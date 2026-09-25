@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +20,7 @@ import '../services/file_browser_service.dart';
 import '../services/theme_service.dart';
 import '../services/thumbnail_service.dart';
 import '../services/stream_sources_service.dart';
+import '../core/ui/responsive.dart';
 import '../core/video_player_controller.dart';
 import 'settings_screen.dart';
 
@@ -1150,162 +1152,183 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
     }
 
     if (displayVideos.isEmpty) {
-      return Center(
-        child: SingleChildScrollView(
+      // Always scrollable so pull-to-refresh works on the empty state.
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 800),
-                curve: Curves.easeOut,
-                builder: (context, value, child) {
-                  return Transform.scale(
-                    scale: value,
-                    child: Opacity(
-                      opacity: value,
-                      child: Container(
-                        padding: const EdgeInsets.all(32),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: isDark
-                                ? [
-                                    const Color(0xFF1A1A1A),
-                                    const Color(0xFF2A2A2A),
-                                  ]
-                                : [Colors.white, Colors.grey[50]!],
-                          ),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(
-                                alpha: isDark ? 0.3 : 0.1,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: math.max(0, constraints.maxHeight - 64),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 800),
+                    curve: Curves.easeOut,
+                    builder: (context, value, child) {
+                      return Transform.scale(
+                        scale: value,
+                        child: Opacity(
+                          opacity: value,
+                          child: Container(
+                            padding: const EdgeInsets.all(32),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: isDark
+                                    ? [
+                                        const Color(0xFF1A1A1A),
+                                        const Color(0xFF2A2A2A),
+                                      ]
+                                    : [Colors.white, Colors.grey[50]!],
                               ),
-                              blurRadius: 30,
-                              offset: const Offset(0, 15),
-                              spreadRadius: 5,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: isDark ? 0.3 : 0.1,
+                                  ),
+                                  blurRadius: 30,
+                                  offset: const Offset(0, 15),
+                                  spreadRadius: 5,
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.movie_outlined,
-                          size: 64,
-                          color: isDark ? Colors.grey[300] : Colors.grey[700],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 40),
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 600),
-                curve: Curves.easeOut,
-                builder: (context, value, child) {
-                  return Opacity(
-                    opacity: value,
-                    child: Transform.translate(
-                      offset: Offset(0, 20 * (1 - value)),
-                      child: child,
-                    ),
-                  );
-                },
-                child: Column(
-                  children: [
-                    Text(
-                      'No videos found',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black87,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Pull down to scan for videos',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'or check your storage permissions',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.grey[500] : Colors.grey[500],
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.red.shade600, Colors.orange.shade600],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.red.withValues(alpha: 0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
+                            child: Icon(
+                              Icons.movie_outlined,
+                              size: 64,
+                              color: isDark
+                                  ? Colors.grey[300]
+                                  : Colors.grey[700],
+                            ),
                           ),
-                        ],
-                      ),
-                      child: ElevatedButton.icon(
-                        onPressed: () => _scanVideos(background: false),
-                        icon: const Icon(Icons.refresh, color: Colors.white),
-                        label: const Text(
-                          'Scan Videos',
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 40),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeOut,
+                    builder: (context, value, child) {
+                      return Opacity(
+                        opacity: value,
+                        child: Transform.translate(
+                          offset: Offset(0, 20 * (1 - value)),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Column(
+                      children: [
+                        Text(
+                          'No videos found',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Pull down to scan for videos',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
                             fontSize: 16,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            height: 1.5,
                           ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 32,
-                            vertical: 16,
+                        const SizedBox(height: 8),
+                        Text(
+                          'or check your storage permissions',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.grey[500] : Colors.grey[500],
                           ),
-                          shape: RoundedRectangleBorder(
+                        ),
+                        const SizedBox(height: 40),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.red.shade600,
+                                Colors.orange.shade600,
+                              ],
+                            ),
                             borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withValues(alpha: 0.4),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton.icon(
+                            onPressed: () => _scanVideos(background: false),
+                            icon: const Icon(
+                              Icons.refresh,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              'Scan Videos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 32,
+                                vertical: 16,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _showUrlDialog,
+                          icon: const Icon(Icons.link),
+                          label: const Text('Play URL'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: isDark
+                                ? Colors.white
+                                : Colors.black87,
+                            side: BorderSide(
+                              color: isDark
+                                  ? Colors.white54
+                                  : Colors.grey.shade400,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _showUrlDialog,
-                      icon: const Icon(Icons.link),
-                      label: const Text('Play URL'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isDark ? Colors.white : Colors.black87,
-                        side: BorderSide(
-                          color: isDark ? Colors.white54 : Colors.grey.shade400,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       );
@@ -1321,6 +1344,7 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
         return false;
       },
       child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           if (_localVideos.isNotEmpty)
             SliverToBoxAdapter(
@@ -1334,35 +1358,53 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
                       size: 20,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      '${displayVideos.length} ${displayVideos.length == 1 ? 'video' : 'videos'}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    Expanded(
+                      child: Text(
+                        '${displayVideos.length} ${displayVideos.length == 1 ? 'video' : 'videos'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
                       ),
                     ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () =>
-                          _generateVisibleThumbnails(displayVideos),
-                      icon: const Icon(Icons.image_outlined, size: 18),
-                      label: const Text('Thumbnails'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.red.shade600,
+                    // Collapse to an icon on narrow screens or large text.
+                    if (MediaQuery.sizeOf(context).width < 400 ||
+                        MediaQuery.textScalerOf(context).scale(1) > 1.15)
+                      IconButton(
+                        tooltip: 'Generate thumbnails',
+                        onPressed: () =>
+                            _generateVisibleThumbnails(displayVideos),
+                        icon: const Icon(Icons.image_outlined),
+                        color: Colors.red.shade600,
+                      )
+                    else
+                      TextButton.icon(
+                        onPressed: () =>
+                            _generateVisibleThumbnails(displayVideos),
+                        icon: const Icon(Icons.image_outlined, size: 18),
+                        label: const Text('Thumbnails'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red.shade600,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final video = displayVideos[index];
-                return _buildVideoListItem(video);
-              }, childCount: displayVideos.length),
+            padding: EdgeInsets.fromLTRB(
+              context.pagePadding,
+              0,
+              context.pagePadding,
+              16 + MediaQuery.paddingOf(context).bottom,
+            ),
+            sliver: SliverAdaptiveList(
+              itemCount: displayVideos.length,
+              itemBuilder: (context, index) =>
+                  _buildVideoListItem(displayVideos[index]),
             ),
           ),
         ],
@@ -1476,12 +1518,16 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final video = displayVideos[index];
-                return _buildVideoListItem(video);
-              }, childCount: displayVideos.length),
+            padding: EdgeInsets.fromLTRB(
+              context.pagePadding,
+              0,
+              context.pagePadding,
+              16 + MediaQuery.paddingOf(context).bottom,
+            ),
+            sliver: SliverAdaptiveList(
+              itemCount: displayVideos.length,
+              itemBuilder: (context, index) =>
+                  _buildVideoListItem(displayVideos[index]),
             ),
           ),
         ],

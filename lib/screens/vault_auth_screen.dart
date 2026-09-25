@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../core/ui/responsive.dart';
 import '../services/vault_service.dart';
 
 class VaultAuthScreen extends StatefulWidget {
@@ -160,229 +161,236 @@ class _VaultAuthScreenState extends State<VaultAuthScreen>
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Vault Icon
-                    Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [Colors.red.shade800, Colors.red.shade600],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.red.shade800.withValues(alpha: 0.3),
-                            blurRadius: 20,
-                            spreadRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.lock,
-                        size: 60,
-                        color: Colors.white,
-                      ),
-                    ),
-
-                    const SizedBox(height: 40),
-
-                    // Title
-                    Text(
-                      'Private Videos',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: onSurface,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Text(
-                      'Enter password to access your videos',
-                      style: TextStyle(fontSize: 16, color: onSurfaceVariant),
-                      textAlign: TextAlign.center,
-                    ),
-
-                    const SizedBox(height: 60),
-
-                    // Password Input
-                    AnimatedBuilder(
-                      animation: _shakeAnimation,
-                      builder: (context, child) {
-                        return Transform.translate(
-                          offset: Offset(
-                            _shakeAnimation.value * (_showError ? 1 : -1),
-                            0,
-                          ),
-                          child: child,
-                        );
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.grey.shade900.withValues(alpha: 0.5)
-                              : surfaceVariant,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: _showError
-                                ? Colors.red.shade600
-                                : Colors.grey.shade700,
-                            width: 2,
-                          ),
-                        ),
-                        child: TextField(
-                          controller: _passwordController,
-                          focusNode: _passwordFocusNode,
-                          obscureText: !_isPasswordVisible,
-                          style: TextStyle(color: onSurface, fontSize: 18),
-                          decoration: InputDecoration(
-                            hintText: 'Enter password',
-                            hintStyle: TextStyle(color: onSurfaceVariant),
-                            prefixIcon: const Icon(
-                              Icons.lock_outline,
-                              color: Colors.grey,
-                            ),
-                            suffixIcon: IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  _isPasswordVisible = !_isPasswordVisible;
-                                });
-                                unawaited(HapticFeedback.lightImpact());
-                              },
-                              icon: Icon(
-                                _isPasswordVisible
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 20,
-                            ),
-                          ),
-                          onSubmitted: (_) => _authenticate(),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Error Message
-                    if (_showError)
+              child: MaxWidthBox(
+                maxWidth: 480,
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Vault Icon
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
+                        width: 120,
+                        height: 120,
                         decoration: BoxDecoration(
-                          color: Colors.red.shade900.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.red.shade600.withValues(alpha: 0.5),
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [Colors.red.shade800, Colors.red.shade600],
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              color: Colors.red.shade400,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _errorMessage,
-                                style: TextStyle(
-                                  color: Colors.red.shade400,
-                                  fontSize: 14,
-                                ),
-                              ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.red.shade800.withValues(alpha: 0.3),
+                              blurRadius: 20,
+                              spreadRadius: 5,
                             ),
                           ],
                         ),
+                        child: const Icon(
+                          Icons.lock,
+                          size: 60,
+                          color: Colors.white,
+                        ),
                       ),
 
-                    const SizedBox(height: 40),
+                      const SizedBox(height: 40),
 
-                    // Login Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _authenticate,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red.shade700,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 0,
+                      // Title
+                      Text(
+                        'Private Videos',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: onSurface,
+                          letterSpacing: 1.2,
                         ),
-                        child: _isLoading
-                            ? const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(width: 12),
-                                  Text('Accessing...'),
-                                ],
-                              )
-                            : const Text(
-                                'Access Videos',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Text(
+                        'Enter password to access your videos',
+                        style: TextStyle(fontSize: 16, color: onSurfaceVariant),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: 60),
+
+                      // Password Input
+                      AnimatedBuilder(
+                        animation: _shakeAnimation,
+                        builder: (context, child) {
+                          return Transform.translate(
+                            offset: Offset(
+                              _shakeAnimation.value * (_showError ? 1 : -1),
+                              0,
+                            ),
+                            child: child,
+                          );
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.grey.shade900.withValues(alpha: 0.5)
+                                : surfaceVariant,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: _showError
+                                  ? Colors.red.shade600
+                                  : Colors.grey.shade700,
+                              width: 2,
+                            ),
+                          ),
+                          child: TextField(
+                            controller: _passwordController,
+                            focusNode: _passwordFocusNode,
+                            obscureText: !_isPasswordVisible,
+                            style: TextStyle(color: onSurface, fontSize: 18),
+                            decoration: InputDecoration(
+                              hintText: 'Enter password',
+                              hintStyle: TextStyle(color: onSurfaceVariant),
+                              prefixIcon: const Icon(
+                                Icons.lock_outline,
+                                color: Colors.grey,
+                              ),
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _isPasswordVisible = !_isPasswordVisible;
+                                  });
+                                  unawaited(HapticFeedback.lightImpact());
+                                },
+                                icon: Icon(
+                                  _isPasswordVisible
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.grey,
                                 ),
                               ),
-                      ),
-                    ),
-
-                    SizedBox(height: 30),
-
-                    // Forgot Password Button
-                    TextButton(
-                      onPressed: () {
-                        Navigator.of(context).pushNamed('/vault-forgot');
-                      },
-                      child: Text(
-                        'Forgot password?',
-                        style: TextStyle(color: onSurfaceVariant, fontSize: 14),
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    // Hard Reset Button
-                    TextButton(
-                      onPressed: () => _showHardResetDialog(),
-                      child: Text(
-                        'Format Vault & Clear All Data',
-                        style: TextStyle(
-                          color: Colors.red.shade400.withValues(alpha: 0.6),
-                          fontSize: 12,
-                          decoration: TextDecoration.underline,
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 20,
+                              ),
+                            ),
+                            onSubmitted: (_) => _authenticate(),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+
+                      const SizedBox(height: 20),
+
+                      // Error Message
+                      if (_showError)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade900.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.red.shade600.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                color: Colors.red.shade400,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage,
+                                  style: TextStyle(
+                                    color: Colors.red.shade400,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      const SizedBox(height: 40),
+
+                      // Login Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _authenticate,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade700,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: _isLoading
+                              ? const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                      ),
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text('Accessing...'),
+                                  ],
+                                )
+                              : const Text(
+                                  'Access Videos',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),
+
+                      SizedBox(height: 30),
+
+                      // Forgot Password Button
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pushNamed('/vault-forgot');
+                        },
+                        child: Text(
+                          'Forgot password?',
+                          style: TextStyle(
+                            color: onSurfaceVariant,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Hard Reset Button
+                      TextButton(
+                        onPressed: () => _showHardResetDialog(),
+                        child: Text(
+                          'Format Vault & Clear All Data',
+                          style: TextStyle(
+                            color: Colors.red.shade400.withValues(alpha: 0.6),
+                            fontSize: 12,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
