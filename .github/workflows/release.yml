@@ -27,6 +27,10 @@ on:
         description: "Mark as pre-release"
         type: boolean
         default: false
+      allow_unsigned:
+        description: "Publish even though no signing key is configured (debug-signed, testing only)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -49,9 +53,11 @@ jobs:
       - name: Resolve version
         id: version
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
+            VERSION="$INPUT_VERSION"
           else
             VERSION="${GITHUB_REF_NAME#v}"
           fi
@@ -88,12 +94,17 @@ jobs:
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ALLOW_UNSIGNED: ${{ inputs.allow_unsigned }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
             echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
+            if [ "$ALLOW_UNSIGNED" != "true" ]; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 is not set. Refusing to publish a release signed with the public debug key (re-run manually with allow_unsigned to override)."
+              exit 1
+            fi
             echo "::warning::ANDROID_KEYSTORE_BASE64 not set; signing with the debug key"
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi

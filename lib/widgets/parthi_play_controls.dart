@@ -1,3 +1,4 @@
+import '../core/ui/responsive.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -19,7 +20,7 @@ class ParthiPlayControls extends ConsumerStatefulWidget {
 }
 
 class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver, ReducedMotion {
   bool _showSidePanel = false;
   bool _isRibbonExpanded = false;
   late AnimationController _fadeController;
@@ -31,6 +32,9 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
   bool _showRemainingTime = false;
   bool _backgroundPlayEnabled = false;
   bool _backgroundPlaySupported = false;
+
+  @override
+  List<AnimationController> get motionControllers => [_fadeController];
 
   @override
   void initState() {
@@ -701,7 +705,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
         videoController.togglePlayPause();
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: motionDuration(context, const Duration(milliseconds: 200)),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -719,7 +723,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
           ],
         ),
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
+          duration: motionDuration(context, const Duration(milliseconds: 200)),
           child: Icon(
             isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
             key: ValueKey(isPlaying),
@@ -736,7 +740,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       videoPlayerControllerProvider.select((s) => s.isLocked),
     );
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: motionDuration(context, const Duration(milliseconds: 200)),
       decoration: BoxDecoration(
         color: isLocked
             ? Colors.red.withValues(alpha: 0.8)
@@ -764,7 +768,10 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
           child: Padding(
             padding: const EdgeInsets.all(10),
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
+              duration: motionDuration(
+                context,
+                const Duration(milliseconds: 200),
+              ),
               child: Icon(
                 isLocked ? Icons.lock : Icons.lock_open,
                 key: ValueKey(isLocked),
@@ -897,7 +904,7 @@ class _ParthiPlayControlsState extends ConsumerState<ParthiPlayControls>
       videoPlayerControllerProvider.select((s) => s.aspectRatioMode),
     );
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: motionDuration(context, const Duration(milliseconds: 200)),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.15),
         shape: BoxShape.circle,

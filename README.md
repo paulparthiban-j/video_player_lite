@@ -17,7 +17,7 @@ vault.
 | Subtitles | External subtitle files, online subtitle search, styling (size, colour, background, position) |
 | Library | MediaStore-backed scanning on Android, folder view, configurable scan directories, thumbnails |
 | Streaming | HLS / HTTP streams, saved stream list, YouTube links with quality selection, links shared from other apps |
-| Tools | Picture-in-picture, background playback, video cutter (FFmpeg) |
+| Tools | Picture-in-picture, video cutter (FFmpeg) |
 | Private vault | AES-256-GCM encrypted videos and metadata, streamed to the player without decrypted copies on disk; auto-lock, screenshot blocking, decoy vault, recovery questions and brute-force lockout (see [SECURITY.md](SECURITY.md)) |
 
 ## Getting started
@@ -88,9 +88,11 @@ keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA \
   -keysize 2048 -validity 10000 -alias upload
 ```
 
-Without the secrets, releases are signed with a debug key and the release
-notes say so. Such builds install fine, but they can't be uploaded to Play,
-and users must uninstall them before installing a properly signed build.
+Without the secrets, the release workflow stops with an error. To publish a
+debug-signed build anyway (testing only), run the workflow manually with
+**allow_unsigned**; the release notes then say so. Such builds install fine,
+but they can't be uploaded to Play, and users must uninstall them before
+installing a properly signed build.
 
 For local release builds, put the same four values in
 `android/key.properties` (git-ignored) as `storeFile`, `storePassword`,

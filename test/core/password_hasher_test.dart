@@ -87,6 +87,10 @@ void main() {
     });
   });
 
+  test('production work factor is at least 300k iterations', () {
+    expect(PasswordHasher.productionIterations, greaterThanOrEqualTo(300000));
+  });
+
   test('constantTimeEquals', () {
     expect(PasswordHasher.constantTimeEquals([1, 2, 3], [1, 2, 3]), isTrue);
     expect(PasswordHasher.constantTimeEquals([1, 2, 3], [1, 2, 4]), isFalse);
@@ -95,7 +99,10 @@ void main() {
 
   test('default work factor stays within an acceptable time budget', () {
     final sw = Stopwatch()..start();
-    PasswordHasher.hash('benchmark');
+    PasswordHasher.hash(
+      'benchmark',
+      iterations: PasswordHasher.productionIterations,
+    );
     sw.stop();
     // printOnFailure keeps CI logs quiet unless something regresses.
     printOnFailure('PBKDF2 default hash took ${sw.elapsedMilliseconds}ms');

@@ -79,6 +79,22 @@ class SubtitleDownloadProgress {
 class SubtitleDownloaderService {
   static const String _opensubtitlesBaseUrl = 'https://rest.opensubtitles.org';
   static const String _userAgent = 'ParthiPlay v1.0';
+  static const Duration _requestTimeout = Duration(seconds: 20);
+  static const int _maxSubtitleBytes = 5 * 1024 * 1024;
+
+  static Future<http.Response> _get(Uri uri, {Map<String, String>? headers}) =>
+      http.get(uri, headers: headers).timeout(_requestTimeout);
+
+  /// A file name that is safe to join onto a directory: no separators, no
+  /// `..`, no control characters. Server-supplied names go through this.
+  @visibleForTesting
+  static String safeFileName(String name) {
+    var base = name.split(RegExp(r'[\\/]')).last;
+    base = base.replaceAll(RegExp(r'[\x00-\x1f<>:"|?*]'), '_').trim();
+    base = base.replaceAll(RegExp(r'^\.+'), '');
+    return base.isEmpty ? 'subtitle.srt' : base;
+  }
+
   static StreamController<SubtitleDownloadProgress>? _progressController;
 
   static Stream<SubtitleDownloadProgress> get downloadProgressStream =>
@@ -120,7 +136,7 @@ class SubtitleDownloaderService {
         '$_opensubtitlesBaseUrl/search',
       ).replace(queryParameters: searchParams);
 
-      final response = await http.get(
+      final response = await _get(
         uri,
         headers: {'User-Agent': _userAgent, 'Accept': 'application/json'},
       );
@@ -157,7 +173,7 @@ class SubtitleDownloaderService {
         '$_opensubtitlesBaseUrl/search',
       ).replace(queryParameters: searchParams);
 
-      final response = await http.get(
+      final response = await _get(
         uri,
         headers: {'User-Agent': _userAgent, 'Accept': 'application/json'},
       );
@@ -186,10 +202,10 @@ class SubtitleDownloaderService {
 
       // Get download link
       final downloadUri = Uri.parse(
-        '$_opensubtitlesBaseUrl/download/$subtitleId',
+        '$_opensubtitlesBaseUrl/download/${Uri.encodeComponent(subtitleId)}',
       );
 
-      final response = await http.get(
+      final response = await _get(
         downloadUri,
         headers: {'User-Agent': _userAgent, 'Accept': 'application/json'},
       );
@@ -207,8 +223,14 @@ class SubtitleDownloaderService {
         return null;
       }
 
+      final linkUri = Uri.tryParse(downloadLink);
+      if (linkUri == null || linkUri.scheme != 'https') {
+        debugPrint('Refusing non-https subtitle link');
+        return null;
+      }
+
       // Download the subtitle file
-      final fileResponse = await http.get(
+      final fileResponse = await _get(
         Uri.parse(downloadLink),
         headers: {'User-Agent': _userAgent},
       );
@@ -222,10 +244,14 @@ class SubtitleDownloaderService {
 
       // Save to file
       final directory = outputDirectory ?? await _getSubtitleDirectory();
-      final outputPath = path.join(directory, fileName);
+      final outputPath = path.join(directory, safeFileName(fileName));
       final file = File(outputPath);
 
       final contentLength = fileResponse.bodyBytes.length;
+      if (contentLength > _maxSubtitleBytes) {
+        debugPrint('Subtitle file too large');
+        return null;
+      }
       final sink = file.openWrite();
       sink.add(fileResponse.bodyBytes);
       await sink.close();

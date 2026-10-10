@@ -17,7 +17,7 @@ class _LaunchScreenState extends State<LaunchScreen>
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 700),
       vsync: this,
     );
 
@@ -29,27 +29,35 @@ class _LaunchScreenState extends State<LaunchScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
     );
 
-    _animationController.forward();
-
-    // Navigate to main screen after shorter delay
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        try {
-          Navigator.of(context).pushReplacementNamed('/main');
-        } catch (e) {
-          debugPrint('Navigation error: $e');
-          // Fallback: try to navigate after a short delay
-          Future.delayed(const Duration(milliseconds: 200), () {
-            if (mounted) {
-              try {
-                Navigator.of(context).pushReplacementNamed('/main');
-              } catch (e2) {
-                debugPrint('Fallback navigation also failed: $e2');
-              }
-            }
-          });
-        }
+    // Navigate once the intro has played; skip the wait entirely when the
+    // user has asked the system for reduced motion.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final reduceMotion = MediaQuery.disableAnimationsOf(context);
+      if (reduceMotion) {
+        _animationController.value = 1;
+      } else {
+        _animationController.forward();
       }
+      Future.delayed(Duration(milliseconds: reduceMotion ? 0 : 800), () {
+        if (mounted) {
+          try {
+            Navigator.of(context).pushReplacementNamed('/main');
+          } catch (e) {
+            debugPrint('Navigation error: $e');
+            // Fallback: try to navigate after a short delay
+            Future.delayed(const Duration(milliseconds: 200), () {
+              if (mounted) {
+                try {
+                  Navigator.of(context).pushReplacementNamed('/main');
+                } catch (e2) {
+                  debugPrint('Fallback navigation also failed: $e2');
+                }
+              }
+            });
+          }
+        }
+      });
     });
   }
 

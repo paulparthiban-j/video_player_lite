@@ -28,7 +28,15 @@ void main() {
 
   tearDown(() async {
     await VaultStreamServer.stop();
-    await dir.delete(recursive: true);
+    // On Windows the server's file handle can outlive the response briefly.
+    for (var attempt = 0; attempt < 10; attempt++) {
+      try {
+        await dir.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
   });
 
   Future<(int, Map<String, String>, List<int>)> get(
@@ -65,6 +73,26 @@ void main() {
     expect(headers['content-type'], 'video/mp4');
     expect(headers['accept-ranges'], 'bytes');
     expect(body, data);
+  });
+
+  test('unregistering one stream does not kill a registering one', () async {
+    final first = await VaultStreamServer.register(
+      file: encrypted,
+      key: key,
+      extension: 'mp4',
+    );
+    final second = VaultStreamServer.register(
+      file: encrypted,
+      key: key,
+      extension: 'mp4',
+    );
+    VaultStreamServer.unregister(first);
+    final url = await second;
+    final (status, _, body) = await get(url);
+    expect(status, 200);
+    expect(body, data);
+    final (revoked, _, _) = await get(first);
+    expect(revoked, 404);
   });
 
   test('honors byte ranges for seeking', () async {

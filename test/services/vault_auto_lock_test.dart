@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:next_gen_video_player/core/security/vault_crypto.dart';
+import 'package:next_gen_video_player/core/security/password_hasher.dart';
 import 'package:next_gen_video_player/services/vault_auto_lock.dart';
 import 'package:next_gen_video_player/services/vault_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +36,7 @@ class _FakeVaultScreenState extends State<_FakeVaultScreen> {
 }
 
 void main() {
+  PasswordHasher.defaultIterations = 1000;
   late Directory tempRoot;
   final secureCalls = <bool>[];
 

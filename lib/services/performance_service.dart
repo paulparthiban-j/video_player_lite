@@ -33,6 +33,15 @@ class PerformanceService {
   static const String _autoPerfKey = 'perf_auto_mode';
   static const String _hdrToneMapKey = 'perf_hdr_tonemap';
 
+  /// True for entry-level MediaTek SoCs (MT60xx-MT67xx, Helio). Brand is
+  /// deliberately ignored: many vivo phones use Snapdragon, and Dimensity
+  /// (MT68xx/MT69xx) chips are fast enough for full-quality decoding.
+  @visibleForTesting
+  static bool isLowEndMediaTek(String hardware) {
+    final h = hardware.toLowerCase();
+    return h.contains('helio') || RegExp(r'^mt6[0-7]\d\d').hasMatch(h);
+  }
+
   static Future<void> initialize() async {
     if (_isInitialized) return;
 
@@ -42,14 +51,9 @@ class PerformanceService {
         final sdkInt = androidInfo.version.sdkInt;
         final hardware = androidInfo.hardware.toLowerCase();
         final brand = androidInfo.brand.toLowerCase();
-        final manufacturer = androidInfo.manufacturer.toLowerCase();
 
         // Detect MediaTek devices
-        _isMediaTek =
-            hardware.contains('mt') ||
-            hardware.contains('helio') ||
-            brand.contains('vivo') || // Many Vivo phones are MTK
-            manufacturer.contains('vivo');
+        _isMediaTek = isLowEndMediaTek(hardware);
 
         debugPrint(
           'Device Hardware: $hardware, Brand: $brand, IsMediaTek: $_isMediaTek',

@@ -24,6 +24,16 @@ class SystemControlsService {
     }
   }
 
+  /// Milliseconds since boot (unaffected by clock changes), or null when the
+  /// platform has no such channel.
+  static Future<int?> getElapsedRealtimeMs() async {
+    try {
+      return await _channel.invokeMethod<int>('getElapsedRealtime');
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<double> getCurrentBrightness() async {
     if (!_isInitialized) await initialize();
     return _currentBrightness;

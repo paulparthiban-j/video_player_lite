@@ -12,7 +12,7 @@ class VaultSetupScreen extends StatefulWidget {
 }
 
 class _VaultSetupScreenState extends State<VaultSetupScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, ReducedMotion {
   final TextEditingController _mainPasswordController = TextEditingController();
   final TextEditingController _confirmMainController = TextEditingController();
   final TextEditingController _fakePasswordController = TextEditingController();
@@ -36,6 +36,12 @@ class _VaultSetupScreenState extends State<VaultSetupScreen>
   late AnimationController _fadeController;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
+
+  @override
+  List<AnimationController> get motionControllers => [
+    _slideController,
+    _fadeController,
+  ];
 
   @override
   void initState() {

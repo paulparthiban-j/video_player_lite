@@ -396,6 +396,13 @@ class _ParthiPlayMainScreenState extends ConsumerState<ParthiPlayMainScreen>
       return;
     }
 
+    // Videos are only encrypted once the vault can be recovered.
+    if (await VaultService.needsRecoverySetup()) {
+      if (!mounted) return;
+      unawaited(Navigator.of(context).pushNamed('/vault-security-setup'));
+      return;
+    }
+
     final success = await VaultService.hideVideo(video.path);
     if (!mounted) return;
     if (success) {

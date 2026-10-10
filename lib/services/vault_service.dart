@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/security/password_hasher.dart';
 import '../core/security/vault_crypto.dart';
+import 'system_controls_service.dart';
 import 'thumbnail_service.dart';
 import 'vault_stream_server.dart';
 import 'video_scanner_service.dart';
@@ -167,12 +168,15 @@ class VaultService {
   // Brute-force protection
   static const String _failedAttemptsKey = 'vault_failed_attempts';
   static const String _lockedUntilKey = 'vault_locked_until_ms';
+  // Monotonic copy of the lockout so changing the device clock cannot end it.
+  static const String _lockedElapsedKey = 'vault_locked_elapsed_ms';
+  static const String _lockedDurationKey = 'vault_locked_duration_ms';
   static const int _freeAttempts = 5;
   static const Duration _baseLockout = Duration(seconds: 30);
   static const Duration _maxLockout = Duration(hours: 1);
 
   /// Minimum accepted length for vault passwords.
-  static const int minPasswordLength = 4;
+  static const int minPasswordLength = 6;
 
   static const String _encryptedMetadataPrefix = 'enc1:';
   static const String _plainHiddenExtension = 'vault';
@@ -210,6 +214,25 @@ class VaultService {
     if (!_isAuthenticated || _isInFakeMode) return false;
     return !await isSecuritySetup() || !await hasRecoveryKey();
   }
+
+  /// Whether [vaultFolder] holds any encrypted vault file.
+  static Future<bool> _hasEncryptedFiles(String vaultFolder) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final dir = Directory(path.join(appDir.path, vaultFolder));
+    if (!await dir.exists()) return false;
+    await for (final entity in dir.list()) {
+      if (entity is File &&
+          path.extension(entity.path) == '.$_encryptedHiddenExtension') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// The main vault must be recoverable before anything is encrypted under
+  /// its key; the decoy vault has no recovery by design.
+  static Future<bool> _mayEncrypt() async =>
+      _isInFakeMode || await hasRecoveryKey();
 
   /// Stores recovery questions. Only the owner of the main vault may do this;
   /// otherwise anyone holding the decoy password (or nobody at all) could set
@@ -322,9 +345,10 @@ class VaultService {
         );
         if (dataKey == null) return false;
       } else if (prefs.getString(_mainDataKeyKey) != null) {
-        // Only possible for vaults that never re-saved their questions after
-        // upgrading; they have no encrypted content yet (encryption starts
-        // after recovery setup), so a fresh key loses nothing.
+        // Vaults that never re-saved their questions after upgrading. A fresh
+        // key is only safe while nothing is encrypted under the old one;
+        // otherwise the reset would orphan those videos, so refuse it.
+        if (await _hasEncryptedFiles('main_vault')) return false;
         dataKey = VaultCrypto.newKey();
         await prefs.remove(_fakeDataKeyByMainKey);
       }
@@ -402,9 +426,31 @@ class VaultService {
   static Future<Duration> getLockoutRemaining() async {
     final prefs = await SharedPreferences.getInstance();
     final untilMs = prefs.getInt(_lockedUntilKey) ?? 0;
-    final remaining = untilMs - DateTime.now().millisecondsSinceEpoch;
+    if (untilMs == 0) return Duration.zero;
+
+    // Time since boot is unaffected by the user changing the clock. It is
+    // only comparable within one boot; after a reboot the wall clock is the
+    // best available fallback.
+    final lockedAt = prefs.getInt(_lockedElapsedKey);
+    final duration = prefs.getInt(_lockedDurationKey);
+    final elapsedNow = await elapsedRealtimeMs();
+    final int remaining;
+    if (elapsedNow != null &&
+        lockedAt != null &&
+        duration != null &&
+        elapsedNow >= lockedAt) {
+      remaining = duration - (elapsedNow - lockedAt);
+    } else {
+      remaining = untilMs - DateTime.now().millisecondsSinceEpoch;
+    }
     return remaining > 0 ? Duration(milliseconds: remaining) : Duration.zero;
   }
+
+  /// Milliseconds since boot, or null where the platform can't tell.
+  /// Replaceable in tests.
+  @visibleForTesting
+  static Future<int?> Function() elapsedRealtimeMs =
+      SystemControlsService.getElapsedRealtimeMs;
 
   @visibleForTesting
   static Duration lockoutFor(int failedAttempts) {
@@ -424,6 +470,14 @@ class VaultService {
         _lockedUntilKey,
         DateTime.now().add(lockout).millisecondsSinceEpoch,
       );
+      final elapsed = await elapsedRealtimeMs();
+      if (elapsed != null) {
+        await prefs.setInt(_lockedElapsedKey, elapsed);
+        await prefs.setInt(_lockedDurationKey, lockout.inMilliseconds);
+      } else {
+        await prefs.remove(_lockedElapsedKey);
+        await prefs.remove(_lockedDurationKey);
+      }
     }
   }
 
@@ -431,6 +485,8 @@ class VaultService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_failedAttemptsKey);
     await prefs.remove(_lockedUntilKey);
+    await prefs.remove(_lockedElapsedKey);
+    await prefs.remove(_lockedDurationKey);
   }
 
   static Future<bool> authenticate(String password) async =>
@@ -483,6 +539,16 @@ class VaultService {
       _isAuthenticated = true;
       _isInFakeMode = !isMain;
       await prefs.setBool(_fakeModeKey, _isInFakeMode);
+
+      // Re-wrap the data key if it was derived with fewer iterations.
+      final wrapStorageKey = isMain ? _mainDataKeyKey : _fakeDataKeyKey;
+      final currentWrap = prefs.getString(wrapStorageKey);
+      if (currentWrap != null && VaultCrypto.wrapNeedsUpgrade(currentWrap)) {
+        await prefs.setString(
+          wrapStorageKey,
+          await VaultCrypto.wrapKeyWithSecret(dataKey, password),
+        );
+      }
 
       // Transparently upgrade hashes written by older app versions.
       final matchedKey = isMain ? _mainVaultKey : _fakeVaultKey;
@@ -614,6 +680,8 @@ class VaultService {
         _securitySetupKey,
         _failedAttemptsKey,
         _lockedUntilKey,
+        _lockedElapsedKey,
+        _lockedDurationKey,
         _mainDataKeyKey,
         _fakeDataKeyKey,
         _mainRecoveryDataKeyKey,
@@ -640,6 +708,7 @@ class VaultService {
   }) async {
     final dataKey = _dataKey;
     if (!_isAuthenticated || dataKey == null) return false;
+    if (!await _mayEncrypt()) return false;
 
     final source = File(videoPath);
     File? hidden;
@@ -671,17 +740,23 @@ class VaultService {
         format: VaultFileFormat.encrypted,
       );
 
+      // Record the encrypted copy before touching the original, so a crash
+      // can never leave a deleted original with no index entry.
+      await _updateVideos((videos) => [...videos, vaultVideo]);
+
       // Remove the original last: if that fails, undo so the video is not
       // left in two places.
       try {
         await source.delete();
       } catch (e) {
         debugPrint('Could not delete original after encrypting: $e');
+        await _updateVideos(
+          (videos) => videos.where((v) => v.id != videoId).toList(),
+        );
         await hidden.delete();
         return false;
       }
 
-      await _updateVideos((videos) => [...videos, vaultVideo]);
       await VideoScannerService.removeFromCache(videoPath);
       await ThumbnailService.deleteThumbnail(videoPath);
 
@@ -761,6 +836,7 @@ class VaultService {
   }) async {
     final dataKey = _dataKey;
     if (!_isAuthenticated || dataKey == null) return 0;
+    if (!await _mayEncrypt()) return 0;
 
     final pending = (await _getVaultVideos())
         .where((v) => !v.isEncrypted)
@@ -911,17 +987,7 @@ class VaultService {
   static Future<String?> exportVideoForSharing(VaultVideo video) =>
       _exportToTemp(video, 'share');
 
-  /// Writes a decrypted copy to the temp directory.
-  static Future<String?> exportVideoForPlayback(
-    VaultVideo video, {
-    ValueChanged<double>? onProgress,
-  }) => _exportToTemp(video, 'play', onProgress: onProgress);
-
-  static Future<String?> _exportToTemp(
-    VaultVideo video,
-    String purpose, {
-    ValueChanged<double>? onProgress,
-  }) async {
+  static Future<String?> _exportToTemp(VaultVideo video, String purpose) async {
     if (!_isAuthenticated) return null;
 
     try {
@@ -937,11 +1003,10 @@ class VaultService {
       if (await exportFile.exists()) await exportFile.delete();
 
       final success = video.isEncrypted
-          ? await _decryptVideoToPath(video, exportPath, onProgress: onProgress)
+          ? await _decryptVideoToPath(video, exportPath)
           : await _copyVideoToPath(
               sourcePath: video.hiddenPath,
               destinationPath: exportPath,
-              onProgress: onProgress,
             );
       return success ? exportPath : null;
     } catch (e) {
@@ -1058,10 +1123,18 @@ class VaultService {
     await prefs.setString(_videosPrefsKey, '$_encryptedMetadataPrefix$sealed');
   }
 
+  static Future<void> _writeQueue = Future<void>.value();
+
+  /// Read-modify-write of the video list. Updates run one at a time so a
+  /// background encryption pass and a user action can't overwrite each other.
   static Future<void> _updateVideos(
     List<VaultVideo> Function(List<VaultVideo> videos) update,
-  ) async {
-    await _saveVaultVideos(update(await _getVaultVideos()));
+  ) {
+    final run = _writeQueue.then(
+      (_) async => _saveVaultVideos(update(await _getVaultVideos())),
+    );
+    _writeQueue = run.then((_) {}, onError: (Object _) {});
+    return run;
   }
 
   static Future<bool> _decryptVideoToPath(

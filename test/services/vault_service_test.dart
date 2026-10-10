@@ -1,3 +1,8 @@
+// Every unlock spawns several isolates for key derivation, which is slow on
+// busy CI and Windows machines.
+@Timeout(Duration(minutes: 3))
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,6 +10,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/dart.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:next_gen_video_player/core/security/password_hasher.dart';
 import 'package:next_gen_video_player/core/security/vault_crypto.dart';
 import 'package:next_gen_video_player/services/vault_service.dart';
 import 'package:path/path.dart' as p;
@@ -15,7 +21,12 @@ void main() {
 
   late Directory tempRoot;
 
-  setUpAll(() => VaultCrypto.algorithm = DartAesGcm.with256bits());
+  setUpAll(() {
+    VaultCrypto.algorithm = DartAesGcm.with256bits();
+    // The production work factor is far too slow for the pure-Dart cipher
+    // and hasher used under test.
+    PasswordHasher.defaultIterations = 1000;
+  });
 
   setUp(() async {
     tempRoot = await Directory.systemTemp.createTemp('vault_test_');
@@ -25,12 +36,20 @@ void main() {
           (call) async => tempRoot.path,
         );
     SharedPreferences.setMockInitialValues({});
+    VaultService.elapsedRealtimeMs = () async => null;
     await VaultService.logout();
   });
 
   tearDown(() async {
     if (await tempRoot.exists()) await tempRoot.delete(recursive: true);
   });
+
+  /// Unlocks the main vault and configures recovery, which videos need
+  /// before they can be encrypted.
+  Future<void> unlockMain() async {
+    await VaultService.authenticate('main-pass');
+    await VaultService.setSecurityQuestions(['Q?'], ['A']);
+  }
 
   group('setup and unlock', () {
     test('rejects weak or identical passwords', () async {
@@ -213,7 +232,7 @@ void main() {
 
     test('hide then unhide restores the file without clobbering', () async {
       await VaultService.setupVault('main-pass', 'decoy-pass');
-      await VaultService.authenticate('main-pass');
+      await unlockMain();
 
       final original = File(p.join(tempRoot.path, 'clip.mp4'));
       await original.writeAsString('video-bytes');
@@ -247,7 +266,7 @@ void main() {
 
     test('hidden files and metadata are encrypted at rest', () async {
       await VaultService.setupVault('main-pass', 'decoy-pass');
-      await VaultService.authenticate('main-pass');
+      await unlockMain();
       final video = await makeVideo('holiday.mp4', 'secret-video-bytes' * 50);
 
       expect(await VaultService.hideVideo(video.path), isTrue);
@@ -272,7 +291,7 @@ void main() {
 
     test('decoy and main vaults are isolated', () async {
       await VaultService.setupVault('main-pass', 'decoy-pass');
-      await VaultService.authenticate('main-pass');
+      await unlockMain();
       await VaultService.hideVideo((await makeVideo('a.mp4', 'main')).path);
       await VaultService.logout();
 
@@ -282,14 +301,14 @@ void main() {
       expect(await VaultService.getVaultVideos(), hasLength(1));
       await VaultService.logout();
 
-      await VaultService.authenticate('main-pass');
+      await unlockMain();
       final main = await VaultService.getVaultVideos();
       expect(main.single.fileName, 'a.mp4');
     });
 
     test('password recovery keeps encrypted videos readable', () async {
       await VaultService.setupVault('main-pass', 'decoy-pass');
-      await VaultService.authenticate('main-pass');
+      await unlockMain();
       await VaultService.setSecurityQuestions(['Pet?'], ['Rex']);
       final video = await makeVideo('keep.mp4', 'precious');
       await VaultService.hideVideo(video.path);
@@ -311,7 +330,7 @@ void main() {
       await VaultService.hideVideo((await makeVideo('d.mp4', 'decoy')).path);
       await VaultService.logout();
 
-      await VaultService.authenticate('main-pass');
+      await unlockMain();
       expect(
         await VaultService.changePassword('main-pass', 'main-2', 'decoy-2'),
         isTrue,
@@ -327,7 +346,7 @@ void main() {
 
     test('streams encrypted videos for playback', () async {
       await VaultService.setupVault('main-pass', 'decoy-pass');
-      await VaultService.authenticate('main-pass');
+      await unlockMain();
       await VaultService.hideVideo(
         (await makeVideo('s.mp4', 'streamed-content')).path,
       );
@@ -386,6 +405,11 @@ void main() {
       expect(before.single.isEncrypted, isFalse);
       expect(await VaultService.countUnencryptedVideos(), 1);
 
+      // Nothing is encrypted until the vault can be recovered.
+      expect(await VaultService.encryptPendingVideos(), 0);
+      expect(await plainFile.exists(), isTrue);
+
+      expect(await VaultService.setSecurityQuestions(['Q?'], ['A']), isTrue);
       expect(await VaultService.encryptPendingVideos(), 1);
       final after = (await VaultService.getVaultVideos()).single;
       expect(after.isEncrypted, isTrue);
@@ -396,6 +420,161 @@ void main() {
         await File(p.join(tempRoot.path, 'old.mp4')).readAsString(),
         'legacy-video',
       );
+    });
+  });
+  group('data safety', () {
+    Future<File> video(String name, [String content = 'bytes']) async =>
+        File(p.join(tempRoot.path, name))..writeAsStringSync(content);
+
+    test('refuses to encrypt before recovery is configured', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await VaultService.authenticate('main-pass');
+      expect(await VaultService.needsRecoverySetup(), isTrue);
+
+      final v = await video('early.mp4');
+      expect(await VaultService.hideVideo(v.path), isFalse);
+      expect(await v.exists(), isTrue, reason: 'original must be untouched');
+      expect(await VaultService.getVaultVideos(), isEmpty);
+    });
+
+    test('the decoy vault may encrypt without recovery', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await VaultService.authenticate('decoy-pass');
+      expect(await VaultService.hideVideo((await video('d.mp4')).path), isTrue);
+    });
+
+    test('concurrent hides all land in the index', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await unlockMain();
+      final files = [for (var i = 0; i < 6; i++) await video('c$i.mp4', '$i')];
+      final results = await Future.wait(
+        files.map((f) => VaultService.hideVideo(f.path)),
+      );
+      expect(results, everyElement(isTrue));
+      expect(await VaultService.getVaultVideos(), hasLength(6));
+    });
+
+    test('concurrent hide and delete do not lose updates', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await unlockMain();
+      await VaultService.hideVideo((await video('keep.mp4')).path);
+      await VaultService.hideVideo((await video('drop.mp4')).path);
+      final drop = (await VaultService.getVaultVideos()).firstWhere(
+        (v) => v.fileName == 'drop.mp4',
+      );
+      final added = await video('new.mp4');
+      await Future.wait([
+        VaultService.deleteFromVault(drop.id),
+        VaultService.hideVideo(added.path),
+      ]);
+      final names = (await VaultService.getVaultVideos())
+          .map((v) => v.fileName)
+          .toSet();
+      expect(names, {'keep.mp4', 'new.mp4'});
+    });
+
+    test(
+      'a reset cannot orphan encrypted videos from a legacy vault',
+      () async {
+        await VaultService.setupVault('main-pass', 'decoy-pass');
+        await unlockMain();
+        // Emulate a vault upgraded from an old version: answers exist but the
+        // recovery wrap was never created.
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('vault_main_dek_recovery');
+        await VaultService.logout();
+
+        final dir = Directory(p.join(tempRoot.path, 'main_vault'))
+          ..createSync(recursive: true);
+        File(p.join(dir.path, 'x.pvault')).writeAsStringSync('encrypted');
+
+        expect(
+          await VaultService.resetPasswordWithSecurity('new-pass', ['A']),
+          isFalse,
+        );
+        expect(await VaultService.authenticate('main-pass'), isTrue);
+      },
+    );
+
+    test('a legacy vault with no encrypted files can still reset', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      await unlockMain();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('vault_main_dek_recovery');
+      await VaultService.logout();
+      expect(
+        await VaultService.resetPasswordWithSecurity('new-pass', ['A']),
+        isTrue,
+      );
+    });
+  });
+
+  group('lockout clock', () {
+    test('changing the wall clock does not end a lockout', () async {
+      var elapsed = 1000000;
+      VaultService.elapsedRealtimeMs = () async => elapsed;
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      for (var i = 0; i < 5; i++) {
+        await VaultService.unlock('wrong-$i');
+      }
+      expect(
+        await VaultService.getLockoutRemaining(),
+        greaterThan(Duration.zero),
+      );
+
+      // User sets the clock forward: the stored wall-clock deadline is past.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('vault_locked_until_ms', 1);
+      elapsed += 5000;
+      final remaining = await VaultService.getLockoutRemaining();
+      expect(remaining, greaterThan(const Duration(seconds: 20)));
+      expect(
+        (await VaultService.unlock('main-pass')).status,
+        VaultAuthStatus.lockedOut,
+      );
+
+      elapsed += 26000;
+      expect(await VaultService.getLockoutRemaining(), Duration.zero);
+      expect((await VaultService.unlock('main-pass')).isSuccess, isTrue);
+    });
+
+    test('falls back to the wall clock without a monotonic source', () async {
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      for (var i = 0; i < 5; i++) {
+        await VaultService.unlock('wrong-$i');
+      }
+      expect(
+        await VaultService.getLockoutRemaining(),
+        greaterThan(Duration.zero),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('vault_locked_until_ms', 1);
+      expect(await VaultService.getLockoutRemaining(), Duration.zero);
+    });
+  });
+
+  group('key derivation upgrade', () {
+    test('unlock re-wraps keys made with fewer iterations', () async {
+      PasswordHasher.defaultIterations = 10;
+      await VaultService.setupVault('main-pass', 'decoy-pass');
+      PasswordHasher.defaultIterations = 1000;
+      addTearDown(() => PasswordHasher.defaultIterations = 1000);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('vault_main_dek'), contains(r'$10$'));
+
+      expect((await VaultService.unlock('main-pass')).isSuccess, isTrue);
+      expect(
+        VaultCrypto.wrapNeedsUpgrade(prefs.getString('vault_main_dek')!),
+        isFalse,
+      );
+      await VaultService.logout();
+      expect((await VaultService.unlock('main-pass')).isSuccess, isTrue);
+    });
+
+    test('rejects passwords shorter than the minimum', () async {
+      expect(VaultService.minPasswordLength, greaterThanOrEqualTo(6));
+      expect(await VaultService.setupVault('12345', 'abcdef'), isFalse);
     });
   });
 }

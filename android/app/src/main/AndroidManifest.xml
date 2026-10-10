@@ -16,10 +16,6 @@
     <!-- Wake lock for playback -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     
-    <!-- Background playback -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    
     <application
         android:label="Parthi Play"
         android:name="${applicationName}"

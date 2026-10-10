@@ -81,6 +81,8 @@ class MainActivity : FlutterActivity() {
                 "requestAudioFocus" -> result.success(requestAudioFocus())
                 "abandonAudioFocus" -> result.success(abandonAudioFocus())
                 "isSupported" -> result.success(true)
+                "getElapsedRealtime" ->
+                    result.success(android.os.SystemClock.elapsedRealtime())
                 "setSecure" -> {
                     // Blocks screenshots, screen recording and the recent-apps
                     // preview while vault content is on screen.

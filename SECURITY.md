@@ -9,11 +9,11 @@ The vault encrypts hidden videos and their metadata on the device.
 | Video encryption | AES-256-GCM in 1 MiB authenticated chunks (hardware AES via the platform crypto APIs). Each chunk is bound to its file, position and the file length, so tampering, reordering and truncation are detected |
 | Metadata encryption | The vault's video list (names, original locations, sizes) is sealed with AES-256-GCM |
 | Playback | Encrypted videos stream to the player through a loopback-only HTTP server that decrypts on the fly. Plaintext is never written to storage. Each stream URL carries a random 256-bit token and is revoked when playback ends or the vault locks |
-| Key hierarchy | Each vault has a random 256-bit data key. It is stored only in wrapped form: under the password, under the recovery answers (main vault), and the decoy key also under the main key. Wrapping keys come from PBKDF2-HMAC-SHA256 (120,000 iterations, random salt). The unwrapped key stays in memory only while the vault is unlocked |
-| Password storage | PBKDF2-HMAC-SHA256, 120,000 iterations, 16-byte random salt per hash, constant-time comparison. Derivation runs off the UI isolate |
+| Key hierarchy | Each vault has a random 256-bit data key. It is stored only in wrapped form: under the password, under the recovery answers (main vault), and the decoy key also under the main key. Wrapping keys come from PBKDF2-HMAC-SHA256 (300,000 iterations, random salt; keys made with fewer iterations are re-wrapped on the next unlock). The unwrapped key stays in memory only while the vault is unlocked |
+| Password storage | PBKDF2-HMAC-SHA256, 300,000 iterations, minimum length 6, 16-byte random salt per hash, constant-time comparison. Derivation runs off the UI isolate |
 | Auto-lock | The vault locks (key wiped, stream URLs revoked, login shown) when you leave the vault screen, and when the app is in the background longer than the chosen time: immediately, 30 s, 1 min (default) or 5 min. Picture-in-picture doesn't count as background. System pickers and the share sheet opened from the vault get at least 5 minutes, so "Immediately" doesn't lock under them |
 | Screen privacy | While the vault is open the window is marked secure on Android: no screenshots, no screen recording, and a blank recent-apps preview |
-| Guessing | After 5 failed unlock or recovery attempts, a lockout starts at 30 s and doubles with each further failure (capped at 1 h) |
+| Guessing | After 5 failed unlock or recovery attempts, a lockout starts at 30 s and doubles with each further failure (capped at 1 h). The countdown uses time since boot, so changing the device clock doesn't shorten it; after a reboot it falls back to the wall clock |
 | Decoy vault | A second password opens a separate vault with its own key. The decoy can't read the main vault, change the main password or set recovery questions |
 | Recovery | Recovery questions can only be set from the unlocked main vault. Answers are hashed and compared ignoring case and whitespace. Recovery unwraps the data key with the answers and re-wraps it under the new password, so encrypted videos stay readable. The decoy password is unchanged |
 | Backups | Android cloud backup and device-to-device transfer are disabled |
@@ -35,7 +35,22 @@ upgrading:
    after the metadata points at the encrypted one, so an interruption never
    loses a video.
 
+### Ordering guarantees
+
+- Hiding a video records the encrypted copy in the vault index **before**
+  the original is deleted, so a crash can't leave a deleted original with no
+  index entry.
+- Nothing is encrypted in the main vault until recovery questions exist, and
+  a recovery reset refuses to create a new key while encrypted files exist
+  under the old one.
+- Vault index updates run one at a time, so background encryption and user
+  actions can't overwrite each other.
+
 ### Not in scope
+
+- Vault keys aren't bound to the Android Keystore. Someone with the app's
+  private storage (a rooted device, forensic extraction) can attack the
+  password offline; the lockout doesn't apply there. Use a long password.
 
 - Share and unhide produce a decrypted copy, by definition. Share copies go
   to the app's temp folder and are wiped on the next launch.

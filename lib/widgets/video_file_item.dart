@@ -198,6 +198,13 @@ class VideoFileItem extends StatelessWidget {
       return;
     }
 
+    // Videos are only encrypted once the vault can be recovered.
+    if (await VaultService.needsRecoverySetup()) {
+      if (!context.mounted) return;
+      unawaited(Navigator.of(context).pushNamed('/vault-security-setup'));
+      return;
+    }
+
     final success = await VaultService.hideVideo(videoFile.path);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

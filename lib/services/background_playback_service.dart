@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +12,8 @@ class BackgroundPlaybackService {
       _backgroundStatusController?.stream ?? Stream.empty();
 
   static Future<bool> isBackgroundSupported() async {
+    // Only iOS has a native handler for this channel.
+    if (!Platform.isIOS) return false;
     try {
       return await _channel.invokeMethod('isBackgroundSupported') ?? false;
     } catch (e) {

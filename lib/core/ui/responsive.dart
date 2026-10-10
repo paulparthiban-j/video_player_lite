@@ -157,3 +157,29 @@ abstract final class AppOrientation {
     return size.shortestSide >= 600;
   }
 }
+
+/// [d], or [Duration.zero] when the system asks for reduced motion.
+Duration motionDuration(BuildContext context, Duration d) =>
+    MediaQuery.disableAnimationsOf(context) ? Duration.zero : d;
+
+/// Makes a State's animation controllers honor the system "remove
+/// animations" / reduced-motion setting.
+mixin ReducedMotion<T extends StatefulWidget> on State<T> {
+  final Map<AnimationController, Duration?> _normalDurations = {};
+
+  /// Controllers that should be skipped when motion is reduced.
+  List<AnimationController> get motionControllers;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    for (final controller in motionControllers) {
+      final normal = _normalDurations.putIfAbsent(
+        controller,
+        () => controller.duration,
+      );
+      controller.duration = reduce ? Duration.zero : normal;
+    }
+  }
+}

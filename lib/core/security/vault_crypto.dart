@@ -136,13 +136,22 @@ class VaultCrypto {
   static Future<String> wrapKeyWithSecret(
     List<int> dataKey,
     String secret, {
-    int iterations = PasswordHasher.defaultIterations,
+    int? iterations,
   }) async {
+    iterations ??= PasswordHasher.defaultIterations;
     final salt = randomBytes(16);
     final kek = await _deriveKey(secret, salt, iterations);
     final sealed = await seal(dataKey, kek, aad: utf8.encode(_wrapScheme));
     return '$_wrapScheme\$$iterations\$${base64.encode(salt)}'
         '\$${base64.encode(sealed)}';
+  }
+
+  /// True when [wrapped] was derived with fewer iterations than today's
+  /// default and should be re-wrapped after a successful unlock.
+  static bool wrapNeedsUpgrade(String wrapped) {
+    final parts = wrapped.split(r'$');
+    if (parts.length != 4 || parts[0] != _wrapScheme) return false;
+    return (int.tryParse(parts[1]) ?? 0) < PasswordHasher.defaultIterations;
   }
 
   /// Returns the data key, or null when [secret] is wrong or [wrapped] is

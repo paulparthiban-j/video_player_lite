@@ -20,34 +20,48 @@ class VaultStreamServer {
   static HttpServer? _server;
   static final Map<String, _Entry> _entries = {};
 
+  /// Registrations between "server ensured" and "entry added". Without this a
+  /// concurrent [unregister] could shut the server down under them.
+  static int _registering = 0;
+
   /// Registers [file] for playback and returns its loopback URL.
   static Future<Uri> register({
     required File file,
     required List<int> key,
     required String extension,
   }) async {
-    final server = await _ensureStarted();
-    final token = base64Url
-        .encode(VaultCrypto.randomBytes(32))
-        .replaceAll('=', '');
-    final ext = extension.isEmpty ? 'bin' : extension.toLowerCase();
-    _entries[token] = _Entry(file, List<int>.of(key), _mimeFor(ext));
-    return Uri(
-      scheme: 'http',
-      host: InternetAddress.loopbackIPv4.address,
-      port: server.port,
-      path: '/$token/video.$ext',
-    );
+    _registering++;
+    try {
+      final server = await _ensureStarted();
+      final token = base64Url
+          .encode(VaultCrypto.randomBytes(32))
+          .replaceAll('=', '');
+      final ext = extension.isEmpty ? 'bin' : extension.toLowerCase();
+      _entries[token] = _Entry(file, Uint8List.fromList(key), _mimeFor(ext));
+      return Uri(
+        scheme: 'http',
+        host: InternetAddress.loopbackIPv4.address,
+        port: server.port,
+        path: '/$token/video.$ext',
+      );
+    } finally {
+      _registering--;
+    }
   }
 
   /// Revokes the URL returned by [register].
   static void unregister(Uri url) {
-    if (url.pathSegments.isNotEmpty) _entries.remove(url.pathSegments.first);
-    if (_entries.isEmpty) unawaited(stop());
+    if (url.pathSegments.isNotEmpty) {
+      _entries.remove(url.pathSegments.first)?.wipe();
+    }
+    if (_entries.isEmpty && _registering == 0) unawaited(stop());
   }
 
   /// Revokes every URL and shuts the server down (e.g. on vault logout).
   static Future<void> stop() async {
+    for (final entry in _entries.values) {
+      entry.wipe();
+    }
     _entries.clear();
     final server = _server;
     _server = null;
@@ -190,8 +204,11 @@ class VaultStreamServer {
 
 class _Entry {
   final File file;
-  final List<int> key;
+  final Uint8List key;
   final String mimeType;
 
   _Entry(this.file, this.key, this.mimeType);
+
+  /// Zeroes this entry's copy of the data key.
+  void wipe() => key.fillRange(0, key.length, 0);
 }

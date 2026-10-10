@@ -14,14 +14,20 @@ class PasswordHasher {
   PasswordHasher._();
 
   static const String _scheme = 'pbkdf2';
-  static const int defaultIterations = 120000;
+
+  /// Iteration count for new hashes and key wraps.
+  static const int productionIterations = 300000;
+
+  /// Current iteration count. Tests lower it; production code never writes it.
+  static int defaultIterations = productionIterations;
   static const int _saltLength = 16;
   static const int _keyLength = 32;
 
   static final Random _random = Random.secure();
 
   /// Hashes [secret] with a fresh random salt.
-  static String hash(String secret, {int iterations = defaultIterations}) {
+  static String hash(String secret, {int? iterations}) {
+    iterations ??= defaultIterations;
     final salt = Uint8List.fromList(
       List<int>.generate(_saltLength, (_) => _random.nextInt(256)),
     );

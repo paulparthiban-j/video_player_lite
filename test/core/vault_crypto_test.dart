@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:cryptography/dart.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:next_gen_video_player/core/security/password_hasher.dart';
 import 'package:next_gen_video_player/core/security/vault_crypto.dart';
 import 'package:path/path.dart' as p;
 
@@ -164,6 +165,23 @@ void main() {
       expect(await VaultCrypto.unwrapKeyWithSecret(wrapped, 'pw'), key);
       expect(await VaultCrypto.unwrapKeyWithSecret(wrapped, 'nope'), isNull);
       expect(await VaultCrypto.unwrapKeyWithSecret('garbage', 'pw'), isNull);
+    });
+
+    test('detects wraps made with fewer iterations than the default', () async {
+      final key = VaultCrypto.newKey();
+      final weak = await VaultCrypto.wrapKeyWithSecret(
+        key,
+        'pw',
+        iterations: 1,
+      );
+      final strong = await VaultCrypto.wrapKeyWithSecret(
+        key,
+        'pw',
+        iterations: PasswordHasher.defaultIterations,
+      );
+      expect(VaultCrypto.wrapNeedsUpgrade(weak), isTrue);
+      expect(VaultCrypto.wrapNeedsUpgrade(strong), isFalse);
+      expect(VaultCrypto.wrapNeedsUpgrade('garbage'), isFalse);
     });
 
     test('wraps with a raw key', () async {

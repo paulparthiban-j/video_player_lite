@@ -89,10 +89,20 @@ class _VideoCutterScreenState extends State<VideoCutterScreen> {
       );
 
       // FFmpeg command: -ss (start), -t (duration), -i (input), -c copy (fast)
-      final command =
-          '-ss $startPos -t $durationToCut -i "${widget.videoPath}" -c copy "$outputFilePath"';
+      // Passed as separate arguments so a file name can never add options.
+      final arguments = <String>[
+        '-ss',
+        startPos,
+        '-t',
+        durationToCut,
+        '-i',
+        widget.videoPath,
+        '-c',
+        'copy',
+        outputFilePath,
+      ];
 
-      await FFmpegKit.execute(command).then((session) async {
+      await FFmpegKit.executeWithArguments(arguments).then((session) async {
         final returnCode = await session.getReturnCode();
         if (ReturnCode.isSuccess(returnCode)) {
           if (!mounted) return;
@@ -113,7 +123,7 @@ class _VideoCutterScreenState extends State<VideoCutterScreen> {
       setState(() => _isProcessing = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ).showSnackBar(const SnackBar(content: Text('Could not cut this video')));
     }
   }
 

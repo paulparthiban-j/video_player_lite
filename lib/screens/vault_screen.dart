@@ -18,7 +18,7 @@ class VaultScreen extends ConsumerStatefulWidget {
 }
 
 class _VaultScreenState extends ConsumerState<VaultScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, ReducedMotion {
   List<VaultVideo> _vaultVideos = [];
   bool _isLoading = true;
   bool _isSelectionMode = false;
@@ -34,6 +34,12 @@ class _VaultScreenState extends ConsumerState<VaultScreen>
   late AnimationController _listController;
   late Animation<double> _fabAnimation;
   late Animation<Offset> _listAnimation;
+
+  @override
+  List<AnimationController> get motionControllers => [
+    _fabController,
+    _listController,
+  ];
 
   @override
   void initState() {
